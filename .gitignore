@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtuelle Umgebungen
+venv/
+.venv/
+env/
+
+# PyInstaller
+*.spec
+!pandora_script_editor.spec
+
+# Editor-/OS-Artefakte
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Lokale Konfiguration (enthält u. a. API-Keys / GitHub-Token!)
+.pandora_script_editor.json
+
+# Logs
+*.log
