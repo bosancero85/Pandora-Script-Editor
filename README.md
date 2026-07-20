@@ -5,7 +5,9 @@ Eine PyQt6-basierte Python-IDE mit integrierter Gemini-KI-Unterstützung, Live-L
 > Teil des **Pandora®**-Projekt-Universums von **AKI_SystemDown®**.
 
 ---
-
+<p align="center">
+  <img src="screenshot.png" alt="Pandora® Script Editor" width="600">
+</p>
 ## ✨ Features
 
 - **Code-Editor**
