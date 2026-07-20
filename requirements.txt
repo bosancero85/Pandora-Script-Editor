@@ -1,0 +1,11 @@
+# Pflichtabhängigkeit
+PyQt6>=6.4
+
+# Optionale Abhängigkeiten - der Editor läuft auch ohne sie, einzelne
+# Funktionen sind dann nur eingeschränkt verfügbar:
+#   qtawesome  -> FontAwesome-Icons (ohne: Emoji-/Text-Fallback)
+#   pyflakes   -> Live-Linting im Probleme-Panel
+#   jedi       -> kontextbezogene Autovervollständigung
+qtawesome>=1.2
+pyflakes>=3.0
+jedi>=0.19
