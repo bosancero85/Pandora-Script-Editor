@@ -1,11 +1,20 @@
-# Pflichtabhängigkeit
-PyQt6>=6.4
+# Pandora Script Editor - Abhängigkeiten
+#
+# Kern (zwingend erforderlich):
+PyQt6>=6.6
 
-# Optionale Abhängigkeiten - der Editor läuft auch ohne sie, einzelne
-# Funktionen sind dann nur eingeschränkt verfügbar:
-#   qtawesome  -> FontAwesome-Icons (ohne: Emoji-/Text-Fallback)
-#   pyflakes   -> Live-Linting im Probleme-Panel
-#   jedi       -> kontextbezogene Autovervollständigung
-qtawesome>=1.2
-pyflakes>=3.0
-jedi>=0.19
+# Optional, aber empfohlen (Icon-Theme; ohne dies greift ein Emoji-Fallback):
+qtawesome>=1.3
+
+# Optional, je nach genutztem Werkzeug:
+jedi>=0.19          # Code-Vervollständigung im Haupteditor
+pyflakes>=3.2        # Linting im Haupteditor
+jsonschema>=4.21     # JSON/YAML/YARA-Editor (Schema-Validierung)
+PyYAML>=6.0          # JSON/YAML/YARA-Editor
+yara-python>=4.5     # JSON/YAML/YARA-Editor (YARA-Regelprüfung)
+PyMySQL>=1.1         # SQL Config Editor & Validator (MySQL-Backend)
+
+# Das neue Pandora Crypto & Encoding Utility (tools/pandora_crypto_tool)
+# benötigt bewusst KEINE zusätzlichen Pakete außer PyQt6 - Base64/Hex/URL/
+# HTML-Encoding, Hashing/HMAC, JWT-Parsing und RegEx laufen komplett über
+# die Python-Standardbibliothek.
