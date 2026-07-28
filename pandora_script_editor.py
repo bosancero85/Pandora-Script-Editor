@@ -26,7 +26,7 @@ Funktionen:
     Wellenlinien im Editor, "Probleme"-Panel mit Sprung zur Fehlerzeile
   - Git-Integration: Repository-Status, Staged/Unstaged-Dateien, Stagen/
     Unstagen/Verwerfen, Diff-Ansicht, Commit, Push, Pull (per "git"-CLI)
-  - Gemini-Integration ("gemini-2.5-flash"): Code erklären, verbessern/
+  - Gemini-Integration ("gemini-3.5-flash"): Code erklären, verbessern/
     reparieren, aus Beschreibung generieren, freier Chat-Prompt; zusätzlicher
     Kontext aus mehreren offenen Dateien und/oder einem ganzen Ordner wählbar
   - Interaktive Python-Konsole (persistenter Namensraum, Verlauf mit ↑/↓)
@@ -52,52 +52,106 @@ import builtins as builtins_module
 import contextlib
 import traceback
 import subprocess
+import importlib.util
 import urllib.request
 import urllib.error
 import code as code_module
 
 from PyQt6.QtCore import (
-    Qt, QRect, QSize, QRegularExpression, QProcess, QThread, pyqtSignal,
-    QStringListModel, QTimer
+    Qt,
+    QRect,
+    QSize,
+    QRegularExpression,
+    QProcess,
+    QThread,
+    pyqtSignal,
+    QStringListModel,
+    QTimer,
 )
 from PyQt6.QtGui import (
-    QColor, QPainter, QTextFormat, QFont, QSyntaxHighlighter,
-    QTextCharFormat, QKeySequence, QAction, QIcon, QTextCursor,
-    QFileSystemModel, QTextDocument
+    QColor,
+    QPainter,
+    QTextFormat,
+    QFont,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QKeySequence,
+    QAction,
+    QIcon,
+    QTextCursor,
+    QFileSystemModel,
+    QTextDocument,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QPlainTextEdit, QWidget, QTextEdit,
-    QTabWidget, QFileDialog, QMessageBox, QToolBar, QStatusBar,
-    QDockWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QDialog, QCheckBox, QGridLayout, QFontDialog, QSplitter,
-    QTreeView, QCompleter, QMenu, QInputDialog,
-    QAbstractItemView, QTextBrowser, QListWidget, QListWidgetItem
+    QApplication,
+    QMainWindow,
+    QPlainTextEdit,
+    QWidget,
+    QTextEdit,
+    QTabWidget,
+    QFileDialog,
+    QMessageBox,
+    QToolBar,
+    QStatusBar,
+    QDockWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QDialog,
+    QCheckBox,
+    QGridLayout,
+    QFontDialog,
+    QSplitter,
+    QTreeView,
+    QCompleter,
+    QMenu,
+    QInputDialog,
+    QAbstractItemView,
+    QTextBrowser,
+    QListWidget,
+    QListWidgetItem,
 )
 
 try:
     import jedi  # optional: kontextbezogene Autovervollständigung
+
     HAVE_JEDI = True
 except ImportError:
     HAVE_JEDI = False
 
 try:
     from pyflakes.api import check as _pyflakes_check  # optional: Lint-Warnungen
+
     HAVE_PYFLAKES = True
 except ImportError:
     HAVE_PYFLAKES = False
 
 try:
     import qtawesome as qta  # optional: FontAwesome-Icon-Theme
+
     HAVE_QTAWESOME = True
 except ImportError:
     HAVE_QTAWESOME = False
 
 APP_NAME = "Pandora® Script Editor"
 CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".pandora_script_editor.json")
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.5-flash"
 GIT_TIMEOUT_SECONDS = 20
 GIT_CLONE_TIMEOUT_SECONDS = 300
 ICON_COLOR = "#d4d4d4"
+
+# Config-Schlüssel für die externen Pandora-Tools (JSON/YAML- & SQL-Config-Editor).
+# Gespeichert wird jeweils der Pfad zum Einstiegs-Skript, damit er nicht bei
+# jedem Start erneut abgefragt werden muss.
+CFG_KEY_JSON_YAML_EDITOR = "json_yaml_editor_path"
+CFG_KEY_SQL_CONFIG_EDITOR = "sql_config_editor_path"
+CFG_KEY_WEB_EDITOR = "web_editor_path"
+CFG_KEY_SNIPPET_VAULT = "snippet_vault_path"
+CFG_KEY_CRYPTO_TOOL = "crypto_tool_path"
+CFG_KEY_UI_ASSET_COLOR_STUDIO = "ui_asset_color_studio_path"
+CFG_KEY_ENV_DEPENDENCY_MANAGER = "env_dependency_manager_path"
 
 
 # ----------------------------------------------------------------------
@@ -122,6 +176,7 @@ def themed(fa_name, label, emoji_fallback="", color=ICON_COLOR):
         return themed_icon(fa_name, color), label
     text = f"{emoji_fallback} {label}".strip() if emoji_fallback else label
     return QIcon(), text
+
 
 PY_KEYWORDS = list(keyword.kwlist)
 PY_BUILTINS = [n for n in dir(builtins_module) if not n.startswith("_")]
@@ -217,7 +272,7 @@ class CodeEditor(QPlainTextEdit):
         self.textChanged.connect(self._refresh_completer_words)
 
         self.setFont(QFont("Consolas", 12))
-        self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(' '))
+        self.setTabStopDistance(4 * self.fontMetrics().horizontalAdvance(" "))
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
 
         self.completer = None
@@ -238,7 +293,7 @@ class CodeEditor(QPlainTextEdit):
     # ---------------- Zeilennummern ----------------
     def line_number_area_width(self):
         digits = len(str(max(1, self.blockCount())))
-        space = 12 + self.fontMetrics().horizontalAdvance('9') * digits
+        space = 12 + self.fontMetrics().horizontalAdvance("9") * digits
         return space
 
     def update_line_number_area_width(self, _):
@@ -267,7 +322,9 @@ class CodeEditor(QPlainTextEdit):
 
         block = self.firstVisibleBlock()
         block_number = block.blockNumber()
-        top = round(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        top = round(
+            self.blockBoundingGeometry(block).translated(self.contentOffset()).top()
+        )
         bottom = top + round(self.blockBoundingRect(block).height())
 
         while block.isValid() and top <= event.rect().bottom():
@@ -275,8 +332,12 @@ class CodeEditor(QPlainTextEdit):
                 number = str(block_number + 1)
                 painter.setPen(QColor("#5c6370"))
                 painter.drawText(
-                    0, top, self.line_number_area.width() - 8, self.fontMetrics().height(),
-                    Qt.AlignmentFlag.AlignRight, number
+                    0,
+                    top,
+                    self.line_number_area.width() - 8,
+                    self.fontMetrics().height(),
+                    Qt.AlignmentFlag.AlignRight,
+                    number,
                 )
             block = block.next()
             top = bottom
@@ -307,14 +368,18 @@ class CodeEditor(QPlainTextEdit):
             if not block.isValid():
                 continue
             cursor = QTextCursor(block)
-            cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+            cursor.movePosition(
+                QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor
+            )
             if not cursor.hasSelection():
                 cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock)
 
             fmt = QTextCharFormat()
             fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.SpellCheckUnderline)
             fmt.setUnderlineColor(
-                QColor("#f14c4c") if issue.get("severity") == "error" else QColor("#d7ba7d")
+                QColor("#f14c4c")
+                if issue.get("severity") == "error"
+                else QColor("#d7ba7d")
             )
             fmt.setToolTip(issue.get("message", ""))
 
@@ -358,7 +423,9 @@ class CodeEditor(QPlainTextEdit):
         if not isinstance(model, QStringListModel):
             return
         words = set(BASE_WORDLIST)
-        words |= set(re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ_][A-Za-z0-9À-ÖØ-öø-ÿ_]*", self.toPlainText()))
+        words |= set(
+            re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ_][A-Za-z0-9À-ÖØ-öø-ÿ_]*", self.toPlainText())
+        )
         model.setStringList(sorted(words))
 
     def text_under_cursor(self):
@@ -383,17 +450,24 @@ class CodeEditor(QPlainTextEdit):
             cursor = self.textCursor()
             line = cursor.blockNumber() + 1
             column = cursor.positionInBlock()
-            script = jedi.Script(code=self.toPlainText(), path=self._file_path or "unbenannt.py")
+            script = jedi.Script(
+                code=self.toPlainText(), path=self._file_path or "unbenannt.py"
+            )
             completions = script.complete(line, column)
-            return [c.name for c in completions if c.name and not c.name.startswith("__")]
+            return [
+                c.name for c in completions if c.name and not c.name.startswith("__")
+            ]
         except Exception:
             return None
 
     def keyPressEvent(self, event):
         if self.completer is not None and self.completer.popup().isVisible():
             if event.key() in (
-                Qt.Key.Key_Enter, Qt.Key.Key_Return, Qt.Key.Key_Escape,
-                Qt.Key.Key_Tab, Qt.Key.Key_Backtab
+                Qt.Key.Key_Enter,
+                Qt.Key.Key_Return,
+                Qt.Key.Key_Escape,
+                Qt.Key.Key_Tab,
+                Qt.Key.Key_Backtab,
             ):
                 event.ignore()
                 return
@@ -409,13 +483,16 @@ class CodeEditor(QPlainTextEdit):
             return
 
         ctrl_or_shift = event.modifiers() in (
-            Qt.KeyboardModifier.ControlModifier, Qt.KeyboardModifier.ShiftModifier
+            Qt.KeyboardModifier.ControlModifier,
+            Qt.KeyboardModifier.ShiftModifier,
         )
         if ctrl_or_shift and not event.text() and not is_shortcut:
             return
 
         end_of_word = "~!@#$%^&*()_+{}|:\"<>?,./;'[]\\-= \t\n"
-        has_modifier = (event.modifiers() != Qt.KeyboardModifier.NoModifier) and not ctrl_or_shift
+        has_modifier = (
+            event.modifiers() != Qt.KeyboardModifier.NoModifier
+        ) and not ctrl_or_shift
         completion_prefix = self.text_under_cursor()
 
         if is_shortcut:
@@ -426,7 +503,9 @@ class CodeEditor(QPlainTextEdit):
             else:
                 self._refresh_completer_words()
         elif (
-            has_modifier or not event.text() or len(completion_prefix) < 2
+            has_modifier
+            or not event.text()
+            or len(completion_prefix) < 2
             or (event.text() and event.text()[-1] in end_of_word)
         ):
             self.completer.popup().hide()
@@ -462,11 +541,43 @@ class PythonHighlighter(QSyntaxHighlighter):
             return f
 
         keywords = [
-            "False", "None", "True", "and", "as", "assert", "async", "await",
-            "break", "class", "continue", "def", "del", "elif", "else", "except",
-            "finally", "for", "from", "global", "if", "import", "in", "is",
-            "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try",
-            "while", "with", "yield", "match", "case"
+            "False",
+            "None",
+            "True",
+            "and",
+            "as",
+            "assert",
+            "async",
+            "await",
+            "break",
+            "class",
+            "continue",
+            "def",
+            "del",
+            "elif",
+            "else",
+            "except",
+            "finally",
+            "for",
+            "from",
+            "global",
+            "if",
+            "import",
+            "in",
+            "is",
+            "lambda",
+            "nonlocal",
+            "not",
+            "or",
+            "pass",
+            "raise",
+            "return",
+            "try",
+            "while",
+            "with",
+            "yield",
+            "match",
+            "case",
         ]
         keyword_fmt = fmt("#c586c0", bold=True)
         for kw in keywords:
@@ -474,10 +585,34 @@ class PythonHighlighter(QSyntaxHighlighter):
             self.rules.append((pattern, keyword_fmt))
 
         builtins = [
-            "print", "len", "range", "int", "str", "float", "list", "dict",
-            "set", "tuple", "bool", "object", "type", "super", "self", "open",
-            "enumerate", "zip", "map", "filter", "isinstance", "sorted", "sum",
-            "min", "max", "abs", "input", "Exception"
+            "print",
+            "len",
+            "range",
+            "int",
+            "str",
+            "float",
+            "list",
+            "dict",
+            "set",
+            "tuple",
+            "bool",
+            "object",
+            "type",
+            "super",
+            "self",
+            "open",
+            "enumerate",
+            "zip",
+            "map",
+            "filter",
+            "isinstance",
+            "sorted",
+            "sum",
+            "min",
+            "max",
+            "abs",
+            "input",
+            "Exception",
         ]
         builtin_fmt = fmt("#4ec9b0")
         for bi in builtins:
@@ -485,11 +620,19 @@ class PythonHighlighter(QSyntaxHighlighter):
             self.rules.append((pattern, builtin_fmt))
 
         self.rules.append((QRegularExpression(r"@\w+"), fmt("#dcdcaa")))
-        self.rules.append((QRegularExpression(r"\bdef\s+(\w+)"), fmt("#dcdcaa", bold=True)))
-        self.rules.append((QRegularExpression(r"\bclass\s+(\w+)"), fmt("#4ec9b0", bold=True)))
+        self.rules.append(
+            (QRegularExpression(r"\bdef\s+(\w+)"), fmt("#dcdcaa", bold=True))
+        )
+        self.rules.append(
+            (QRegularExpression(r"\bclass\s+(\w+)"), fmt("#4ec9b0", bold=True))
+        )
         self.rules.append((QRegularExpression(r"\b[0-9]+\.?[0-9]*\b"), fmt("#b5cea8")))
-        self.rules.append((QRegularExpression(r"'[^'\\]*(\\.[^'\\]*)*'"), fmt("#ce9178")))
-        self.rules.append((QRegularExpression(r'"[^"\\]*(\\.[^"\\]*)*"'), fmt("#ce9178")))
+        self.rules.append(
+            (QRegularExpression(r"'[^'\\]*(\\.[^'\\]*)*'"), fmt("#ce9178"))
+        )
+        self.rules.append(
+            (QRegularExpression(r'"[^"\\]*(\\.[^"\\]*)*"'), fmt("#ce9178"))
+        )
         self.rules.append((QRegularExpression(r"#[^\n]*"), fmt("#6a9955", italic=True)))
 
         self.tri_single = QRegularExpression(r"'''")
@@ -530,7 +673,9 @@ class PythonHighlighter(QSyntaxHighlighter):
                 length = end_index - start_index + 3
                 self.setFormat(start_index, length, self.string_fmt)
                 next_match = pattern.match(text, start_index + length)
-                start_index = next_match.capturedStart() if next_match.hasMatch() else -1
+                start_index = (
+                    next_match.capturedStart() if next_match.hasMatch() else -1
+                )
 
         return False
 
@@ -545,27 +690,33 @@ class _PyflakesIssueCollector:
         self.issues = []
 
     def unexpectedError(self, filename, msg):
-        self.issues.append({"line": 1, "col": 1, "message": str(msg), "severity": "error"})
+        self.issues.append(
+            {"line": 1, "col": 1, "message": str(msg), "severity": "error"}
+        )
 
     def syntaxError(self, filename, msg, lineno, offset, text):
-        self.issues.append({
-            "line": lineno or 1,
-            "col": (offset or 1),
-            "message": str(msg),
-            "severity": "error",
-        })
+        self.issues.append(
+            {
+                "line": lineno or 1,
+                "col": (offset or 1),
+                "message": str(msg),
+                "severity": "error",
+            }
+        )
 
     def flake(self, message):
         try:
             text = message.message % message.message_args
         except Exception:
             text = str(message)
-        self.issues.append({
-            "line": getattr(message, "lineno", 1),
-            "col": getattr(message, "col", 0) + 1,
-            "message": text,
-            "severity": "warning",
-        })
+        self.issues.append(
+            {
+                "line": getattr(message, "lineno", 1),
+                "col": getattr(message, "col", 0) + 1,
+                "message": text,
+                "severity": "warning",
+            }
+        )
 
 
 def lint_source(source, filename=None):
@@ -578,12 +729,14 @@ def lint_source(source, filename=None):
     try:
         ast.parse(source, filename=filename)
     except SyntaxError as e:
-        issues.append({
-            "line": e.lineno or 1,
-            "col": e.offset or 1,
-            "message": f"SyntaxError: {e.msg}",
-            "severity": "error",
-        })
+        issues.append(
+            {
+                "line": e.lineno or 1,
+                "col": e.offset or 1,
+                "message": f"SyntaxError: {e.msg}",
+                "severity": "error",
+            }
+        )
         return issues  # bei ungültiger Syntax bringt eine weitere Prüfung nichts
     except Exception as e:
         issues.append({"line": 1, "col": 1, "message": str(e), "severity": "error"})
@@ -603,6 +756,7 @@ def lint_source(source, filename=None):
 
 class LintWorker(QThread):
     """Führt lint_source() im Hintergrund aus, damit die UI nicht blockiert."""
+
     finished_lint = pyqtSignal(list)
 
     def __init__(self, source, filename, parent=None):
@@ -719,7 +873,11 @@ class FindReplaceDialog(QDialog):
         cursor = editor.textCursor()
         selected = cursor.selectedText()
         case_sensitive = self.case_check.isChecked()
-        matches = (selected == find_text) if case_sensitive else (selected.lower() == find_text.lower())
+        matches = (
+            (selected == find_text)
+            if case_sensitive
+            else (selected.lower() == find_text.lower())
+        )
         if cursor.hasSelection() and matches:
             cursor.insertText(self.replace_edit.text())
             editor.setTextCursor(cursor)
@@ -735,11 +893,18 @@ class FindReplaceDialog(QDialog):
             return
         content = editor.toPlainText()
         flags = re.IGNORECASE if not self.case_check.isChecked() else 0
-        new_content, count = re.subn(re.escape(find_text), replace_text.replace("\\", "\\\\"), content, flags=flags)
+        new_content, count = re.subn(
+            re.escape(find_text),
+            replace_text.replace("\\", "\\\\"),
+            content,
+            flags=flags,
+        )
         if count:
             editor.setPlainText(new_content)
             self._reveal_editor(editor)
-        QMessageBox.information(self, "Alle ersetzen", f"{count} Ersetzung(en) durchgeführt.")
+        QMessageBox.information(
+            self, "Alle ersetzen", f"{count} Ersetzung(en) durchgeführt."
+        )
 
 
 # ----------------------------------------------------------------------
@@ -761,7 +926,7 @@ class ProjectPanel(QDockWidget):
         layout.setContentsMargins(4, 4, 4, 4)
 
         header = QHBoxLayout()
-        btn_open = QPushButton("📁 Ordner öffnen…")
+        btn_open = QPushButton("📁 Open Folder…")
         btn_open.clicked.connect(self.open_folder)
         btn_refresh = QPushButton("⟳")
         btn_refresh.setFixedWidth(32)
@@ -824,9 +989,9 @@ class ProjectPanel(QDockWidget):
             base_path = self.project_root
 
         menu = QMenu(self)
-        ic, tx = themed("fa5s.file", "Neue Datei…", emoji_fallback="📄")
+        ic, tx = themed("fa5s.file", "New File…", emoji_fallback="📄")
         act_new_file = menu.addAction(ic, tx)
-        ic, tx = themed("fa5s.folder", "Neuer Ordner…", emoji_fallback="📁")
+        ic, tx = themed("fa5s.folder", "New Folder…", emoji_fallback="📁")
         act_new_folder = menu.addAction(ic, tx)
         menu.addSeparator()
         ic, tx = themed("fa5s.edit", "Umbenennen…", emoji_fallback="✏")
@@ -850,29 +1015,32 @@ class ProjectPanel(QDockWidget):
 
         try:
             if chosen == act_new_file:
-                name, ok = QInputDialog.getText(self, "Neue Datei", "Dateiname:")
+                name, ok = QInputDialog.getText(self, "New File", "Filename:")
                 if ok and name:
                     open(os.path.join(base_path, name), "a", encoding="utf-8").close()
             elif chosen == act_new_folder:
-                name, ok = QInputDialog.getText(self, "Neuer Ordner", "Ordnername:")
+                name, ok = QInputDialog.getText(self, "New Folder", "Foldername:")
                 if ok and name:
                     os.makedirs(os.path.join(base_path, name), exist_ok=True)
             elif chosen == act_rename and index.isValid():
                 old_path = self.model.filePath(index)
                 name, ok = QInputDialog.getText(
-                    self, "Umbenennen", "Neuer Name:", text=os.path.basename(old_path)
+                    self, "Rename", "New Name:", text=os.path.basename(old_path)
                 )
                 if ok and name:
                     os.rename(old_path, os.path.join(os.path.dirname(old_path), name))
             elif chosen == act_delete and index.isValid():
                 path = self.model.filePath(index)
                 res = QMessageBox.question(
-                    self, "Löschen", f"„{os.path.basename(path)}“ wirklich löschen?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    self,
+                    "Löschen",
+                    f"„{os.path.basename(path)}“ wirklich löschen?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if res == QMessageBox.StandardButton.Yes:
                     if os.path.isdir(path):
                         import shutil
+
                         shutil.rmtree(path)
                     else:
                         os.remove(path)
@@ -888,6 +1056,7 @@ class ProjectPanel(QDockWidget):
 class ProblemsPanel(QDockWidget):
     """Zeigt die Lint-Ergebnisse der aktuellen Datei; Doppelklick springt
     zur betroffenen Zeile im Editor."""
+
     issueActivated = pyqtSignal(int, int)  # line, col (1-basiert)
 
     def __init__(self, parent=None):
@@ -918,7 +1087,9 @@ class ProblemsPanel(QDockWidget):
         warnings = sum(1 for i in issues if i.get("severity") == "warning")
 
         if not issues:
-            self.summary_label.setText(f"✅ Keine Probleme{' – ' + file_label if file_label else ''}")
+            self.summary_label.setText(
+                f"✅ Keine Probleme{' – ' + file_label if file_label else ''}"
+            )
         else:
             self.summary_label.setText(
                 f"🔴 {errors} Fehler   🟡 {warnings} Warnungen"
@@ -930,13 +1101,17 @@ class ProblemsPanel(QDockWidget):
             line = issue.get("line", 1)
             col = issue.get("col", 1)
             if HAVE_QTAWESOME:
-                fa_name = "fa5s.times-circle" if is_error else "fa5s.exclamation-triangle"
+                fa_name = (
+                    "fa5s.times-circle" if is_error else "fa5s.exclamation-triangle"
+                )
                 color = "#f14c4c" if is_error else "#d7ba7d"
                 text = f"Zeile {line}, Spalte {col}: {issue.get('message', '')}"
                 item = QListWidgetItem(themed_icon(fa_name, color=color), text)
             else:
                 prefix = "❌" if is_error else "⚠"
-                text = f"{prefix}  Zeile {line}, Spalte {col}: {issue.get('message', '')}"
+                text = (
+                    f"{prefix}  Zeile {line}, Spalte {col}: {issue.get('message', '')}"
+                )
                 item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, (line, col))
             self.list_widget.addItem(item)
@@ -955,6 +1130,7 @@ class ProblemsPanel(QDockWidget):
 # ----------------------------------------------------------------------
 class GitWorker(QThread):
     """Führt einen einzelnen Git-Befehl asynchron aus."""
+
     finished_run = pyqtSignal(str, int, str, str)  # action, code, stdout, stderr
 
     def __init__(self, action, args, cwd, parent=None):
@@ -971,6 +1147,7 @@ class GitWorker(QThread):
 class GitCloneWorker(QThread):
     """Führt 'git clone' asynchron aus (deutlich längeres Timeout als
     normale Status-/Commit-Befehle, da Repos groß sein können)."""
+
     finished_run = pyqtSignal(int, str, str, str)  # code, stdout, stderr, dest_path
 
     def __init__(self, url, dest_path, parent=None):
@@ -1024,7 +1201,9 @@ class GitHubReposDialog(QDialog):
         hint.setStyleSheet("color:#9aa0ab; font-size:11px;")
         layout.addWidget(hint)
 
-        self.btn_load = QPushButton(*themed("fa5s.sync", "Repositories laden", emoji_fallback="⟳"))
+        self.btn_load = QPushButton(
+            *themed("fa5s.sync", "Repositories laden", emoji_fallback="⟳")
+        )
         self.btn_load.clicked.connect(self._load_repos)
         layout.addWidget(self.btn_load)
 
@@ -1037,7 +1216,9 @@ class GitHubReposDialog(QDialog):
         layout.addWidget(self.lbl_status)
 
         btn_row = QHBoxLayout()
-        self.btn_clone = QPushButton(*themed("fa5s.download", "Ausgewähltes Repo klonen…", emoji_fallback="⬇"))
+        self.btn_clone = QPushButton(
+            *themed("fa5s.download", "Ausgewähltes Repo klonen…", emoji_fallback="⬇")
+        )
         self.btn_clone.clicked.connect(self._clone_selected)
         self.btn_close = QPushButton("Schließen")
         self.btn_close.clicked.connect(self.reject)
@@ -1073,7 +1254,9 @@ class GitHubReposDialog(QDialog):
         except urllib.error.HTTPError as e:
             self.btn_load.setEnabled(True)
             if e.code == 401:
-                self.lbl_status.setText("Ungültiger oder abgelaufener Token (401 Unauthorized).")
+                self.lbl_status.setText(
+                    "Ungültiger oder abgelaufener Token (401 Unauthorized)."
+                )
             else:
                 self.lbl_status.setText(f"GitHub-API-Fehler: HTTP {e.code}")
             return
@@ -1096,8 +1279,11 @@ class GitHubReposDialog(QDialog):
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, repo)
             self.list_repos.addItem(item)
-        self.lbl_status.setText(f"{len(repos)} Repository(s) gefunden." if repos else
-                                 "Keine Repositories gefunden.")
+        self.lbl_status.setText(
+            f"{len(repos)} Repository(s) gefunden."
+            if repos
+            else "Keine Repositories gefunden."
+        )
 
     def _fetch_all_repos(self, token):
         repos = []
@@ -1113,12 +1299,14 @@ class GitHubReposDialog(QDialog):
             if not data:
                 break
             for r in data:
-                repos.append({
-                    "full_name": r.get("full_name", ""),
-                    "clone_url": r.get("clone_url", ""),
-                    "private": r.get("private", False),
-                    "description": r.get("description") or "",
-                })
+                repos.append(
+                    {
+                        "full_name": r.get("full_name", ""),
+                        "clone_url": r.get("clone_url", ""),
+                        "private": r.get("private", False),
+                        "description": r.get("description") or "",
+                    }
+                )
             if len(data) < 100:
                 break
             page += 1
@@ -1129,10 +1317,14 @@ class GitHubReposDialog(QDialog):
     def _clone_selected(self):
         item = self.list_repos.currentItem()
         if not item:
-            QMessageBox.information(self, "GitHub-Repos", "Bitte zuerst ein Repository auswählen.")
+            QMessageBox.information(
+                self, "GitHub-Repos", "Bitte zuerst ein Repository auswählen."
+            )
             return
         repo = item.data(Qt.ItemDataRole.UserRole)
-        self.repoSelectedForClone.emit(repo["clone_url"], repo["full_name"].split("/")[-1])
+        self.repoSelectedForClone.emit(
+            repo["clone_url"], repo["full_name"].split("/")[-1]
+        )
         self.accept()
 
 
@@ -1149,7 +1341,9 @@ class GitPanel(QDockWidget):
         self.show_output = show_output_callable
         self.on_repo_opened = on_repo_opened
         self.repo_root = None
-        self._workers = []  # Referenzen halten, damit Threads nicht vorzeitig gc'ed werden
+        self._workers = (
+            []
+        )  # Referenzen halten, damit Threads nicht vorzeitig gc'ed werden
 
         container = QWidget()
         v = QVBoxLayout(container)
@@ -1161,10 +1355,18 @@ class GitPanel(QDockWidget):
 
         # ---- Repository holen: Klonen von URL oder aus eigenem GitHub-Account ----
         clone_row = QHBoxLayout()
-        self.btn_clone_url = QPushButton(*themed("fa5s.link", "Von URL klonen…", emoji_fallback="🔗"))
-        self.btn_clone_github = QPushButton(*themed("fa5s.github", "GitHub-Repos…", emoji_fallback="🐙"))
-        self.btn_clone_url.setToolTip("Ein beliebiges Git-Repository per URL klonen (kein Token nötig).")
-        self.btn_clone_github.setToolTip("Eigene GitHub-Repositories auflisten und klonen (Personal Access Token nötig).")
+        self.btn_clone_url = QPushButton(
+            *themed("fa5s.link", "Von URL klonen…", emoji_fallback="🔗")
+        )
+        self.btn_clone_github = QPushButton(
+            *themed("fa5s.github", "GitHub-Repos…", emoji_fallback="🐙")
+        )
+        self.btn_clone_url.setToolTip(
+            "Ein beliebiges Git-Repository per URL klonen (kein Token nötig)."
+        )
+        self.btn_clone_github.setToolTip(
+            "Eigene GitHub-Repositories auflisten und klonen (Personal Access Token nötig)."
+        )
         self.btn_clone_url.clicked.connect(self._clone_from_url)
         self.btn_clone_github.clicked.connect(self._open_github_repos)
         clone_row.addWidget(self.btn_clone_url)
@@ -1176,8 +1378,12 @@ class GitPanel(QDockWidget):
         v.addWidget(self.lbl_branch)
 
         btn_row = QHBoxLayout()
-        self.btn_refresh = QPushButton(*themed("fa5s.sync", "Aktualisieren", emoji_fallback="⟳"))
-        self.btn_stage_all = QPushButton(*themed("fa5s.plus", "Alle stagen", emoji_fallback="+"))
+        self.btn_refresh = QPushButton(
+            *themed("fa5s.sync", "Aktualisieren", emoji_fallback="⟳")
+        )
+        self.btn_stage_all = QPushButton(
+            *themed("fa5s.plus", "Alle stagen", emoji_fallback="+")
+        )
         self.btn_refresh.clicked.connect(self.refresh)
         self.btn_stage_all.clicked.connect(self._stage_all)
         btn_row.addWidget(self.btn_refresh)
@@ -1197,14 +1403,20 @@ class GitPanel(QDockWidget):
         v.addWidget(self.commit_edit)
 
         commit_row = QHBoxLayout()
-        self.btn_commit = QPushButton(*themed("fa5s.check", "Commit", emoji_fallback="✔"))
+        self.btn_commit = QPushButton(
+            *themed("fa5s.check", "Commit", emoji_fallback="✔")
+        )
         self.btn_commit.clicked.connect(self._commit)
         commit_row.addWidget(self.btn_commit)
         v.addLayout(commit_row)
 
         sync_row = QHBoxLayout()
-        self.btn_pull = QPushButton(*themed("fa5s.arrow-down", "Pull", emoji_fallback="⇩"))
-        self.btn_push = QPushButton(*themed("fa5s.arrow-up", "Push", emoji_fallback="⇧"))
+        self.btn_pull = QPushButton(
+            *themed("fa5s.arrow-down", "Pull", emoji_fallback="⇩")
+        )
+        self.btn_push = QPushButton(
+            *themed("fa5s.arrow-up", "Push", emoji_fallback="⇧")
+        )
         self.btn_pull.clicked.connect(lambda: self._run("pull", ["pull"]))
         self.btn_push.clicked.connect(lambda: self._run("push", ["push"]))
         sync_row.addWidget(self.btn_pull)
@@ -1226,8 +1438,15 @@ class GitPanel(QDockWidget):
         self.refresh()
 
     def _set_repo_actions_enabled(self, enabled):
-        for w in (self.btn_refresh, self.btn_stage_all, self.btn_commit,
-                  self.btn_pull, self.btn_push, self.commit_edit, self.list_changes):
+        for w in (
+            self.btn_refresh,
+            self.btn_stage_all,
+            self.btn_commit,
+            self.btn_pull,
+            self.btn_push,
+            self.commit_edit,
+            self.list_changes,
+        ):
             w.setEnabled(enabled)
 
     # ---------------- Klonen (URL / GitHub) ----------------
@@ -1242,7 +1461,9 @@ class GitPanel(QDockWidget):
     def _open_github_repos(self):
         dialog = GitHubReposDialog(self)
         dialog.repoSelectedForClone.connect(
-            lambda clone_url, name: self._prompt_destination_and_clone(clone_url, suggested_name=name)
+            lambda clone_url, name: self._prompt_destination_and_clone(
+                clone_url, suggested_name=name
+            )
         )
         dialog.exec()
 
@@ -1259,7 +1480,9 @@ class GitPanel(QDockWidget):
         dest = os.path.join(parent_dir, name)
         if os.path.exists(dest):
             QMessageBox.warning(
-                self, "Klonen", f"Der Ordner „{dest}“ existiert bereits. Bitte einen anderen Zielordner wählen."
+                self,
+                "Klonen",
+                f"Der Ordner „{dest}“ existiert bereits. Bitte einen anderen Zielordner wählen.",
             )
             return
         self._start_clone(url, dest)
@@ -1270,7 +1493,9 @@ class GitPanel(QDockWidget):
         self.btn_clone_github.setEnabled(False)
         worker = GitCloneWorker(url, dest, self)
         worker.finished_run.connect(self._on_clone_finished)
-        worker.finished.connect(lambda w=worker: self._workers.remove(w) if w in self._workers else None)
+        worker.finished.connect(
+            lambda w=worker: self._workers.remove(w) if w in self._workers else None
+        )
         self._workers.append(worker)
         worker.start()
 
@@ -1279,12 +1504,16 @@ class GitPanel(QDockWidget):
         self.btn_clone_github.setEnabled(True)
         self.show_output((out or "") + (("\n" + err) if err else ""))
         if code == 0:
-            QMessageBox.information(self, "Klonen", f"Repository erfolgreich geklont nach:\n{dest}")
+            QMessageBox.information(
+                self, "Klonen", f"Repository erfolgreich geklont nach:\n{dest}"
+            )
             if self.on_repo_opened:
                 self.on_repo_opened(dest)
         else:
             QMessageBox.critical(
-                self, "Klonen fehlgeschlagen", err.strip() if err else "Unbekannter Fehler beim Klonen."
+                self,
+                "Klonen fehlgeschlagen",
+                err.strip() if err else "Unbekannter Fehler beim Klonen.",
             )
 
     def refresh(self):
@@ -1300,7 +1529,9 @@ class GitPanel(QDockWidget):
             return
         worker = GitWorker(action, args, self.repo_root, self)
         worker.finished_run.connect(self._on_result)
-        worker.finished.connect(lambda w=worker: self._workers.remove(w) if w in self._workers else None)
+        worker.finished.connect(
+            lambda w=worker: self._workers.remove(w) if w in self._workers else None
+        )
         self._workers.append(worker)
         worker.start()
 
@@ -1330,8 +1561,10 @@ class GitPanel(QDockWidget):
         if not paths:
             return
         res = QMessageBox.question(
-            self, "Git", f"Änderungen an {len(paths)} Datei(en) wirklich verwerfen?\nDies kann nicht rückgängig gemacht werden.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            self,
+            "Git",
+            f"Änderungen an {len(paths)} Datei(en) wirklich verwerfen?\nDies kann nicht rückgängig gemacht werden.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if res == QMessageBox.StandardButton.Yes:
             self._run("discard", ["checkout", "--"] + paths)
@@ -1347,7 +1580,9 @@ class GitPanel(QDockWidget):
     def _commit(self):
         message = self.commit_edit.text().strip()
         if not message:
-            QMessageBox.information(self, "Git", "Bitte eine Commit-Nachricht eingeben.")
+            QMessageBox.information(
+                self, "Git", "Bitte eine Commit-Nachricht eingeben."
+            )
             return
         self._run("commit", ["commit", "-m", message])
 
@@ -1420,8 +1655,13 @@ class GitPanel(QDockWidget):
             return
 
         status_names = {
-            "M": "geändert", "A": "hinzugefügt", "D": "gelöscht",
-            "R": "umbenannt", "C": "kopiert", "U": "Konflikt", "?": "unversioniert",
+            "M": "geändert",
+            "A": "hinzugefügt",
+            "D": "gelöscht",
+            "R": "umbenannt",
+            "C": "kopiert",
+            "U": "Konflikt",
+            "?": "unversioniert",
         }
         for line in lines:
             if len(line) < 4:
@@ -1478,7 +1718,9 @@ class InteractiveConsole(QPlainTextEdit):
             self.namespace["__file__"] = path
             with contextlib.redirect_stdout(io.StringIO()) as out:
                 exec(compile(source, path, "exec"), self.namespace)
-            self._print_line(f"[Skript '{os.path.basename(path)}' in Konsolen-Namensraum geladen]")
+            self._print_line(
+                f"[Skript '{os.path.basename(path)}' in Konsolen-Namensraum geladen]"
+            )
             text = out.getvalue()
             if text:
                 self._print_line(text.rstrip("\n"))
@@ -1506,7 +1748,7 @@ class InteractiveConsole(QPlainTextEdit):
         self._prompt_pos = self.textCursor().position()
 
     def _current_input(self):
-        return self.toPlainText()[self._prompt_pos:]
+        return self.toPlainText()[self._prompt_pos :]
 
     def keyPressEvent(self, event):
         cursor = self.textCursor()
@@ -1519,7 +1761,10 @@ class InteractiveConsole(QPlainTextEdit):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._execute_current_input()
             return
-        if event.key() == Qt.Key.Key_Backspace and self.textCursor().position() <= self._prompt_pos:
+        if (
+            event.key() == Qt.Key.Key_Backspace
+            and self.textCursor().position() <= self._prompt_pos
+        ):
             return
         if event.key() == Qt.Key.Key_Home:
             c = self.textCursor()
@@ -1569,10 +1814,14 @@ class InteractiveConsole(QPlainTextEdit):
     def _history_navigate(self, direction):
         if not self._history:
             return
-        self._history_idx = max(0, min(len(self._history), self._history_idx + direction))
+        self._history_idx = max(
+            0, min(len(self._history), self._history_idx + direction)
+        )
         cursor = self.textCursor()
         cursor.setPosition(self._prompt_pos)
-        cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+        cursor.movePosition(
+            QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor
+        )
         cursor.removeSelectedText()
         if self._history_idx < len(self._history):
             cursor.insertText(self._history[self._history_idx])
@@ -1587,7 +1836,16 @@ class ContextSelectDialog(QDialog):
 
     MAX_FOLDER_FILES = 40
     MAX_FILE_CHARS = 60_000
-    SKIP_DIR_NAMES = {".git", "__pycache__", "venv", ".venv", "env", "node_modules", ".idea", ".vscode"}
+    SKIP_DIR_NAMES = {
+        ".git",
+        "__pycache__",
+        "venv",
+        ".venv",
+        "env",
+        "node_modules",
+        ".idea",
+        ".vscode",
+    }
 
     def __init__(self, open_files, preselected_paths, parent=None):
         super().__init__(parent)
@@ -1596,7 +1854,11 @@ class ContextSelectDialog(QDialog):
         self.selected_files = []
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Offene Dateien und hinzugefügte Ordner (Häkchen = im Kontext enthalten):"))
+        layout.addWidget(
+            QLabel(
+                "Offene Dateien und hinzugefügte Ordner (Häkchen = im Kontext enthalten):"
+            )
+        )
 
         self.list_widget = QListWidget()
         for f in open_files:
@@ -1604,7 +1866,9 @@ class ContextSelectDialog(QDialog):
             item = QListWidgetItem(f["label"] + suffix)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(
-                Qt.CheckState.Checked if f.get("path") in preselected_paths else Qt.CheckState.Unchecked
+                Qt.CheckState.Checked
+                if f.get("path") in preselected_paths
+                else Qt.CheckState.Unchecked
             )
             item.setData(Qt.ItemDataRole.UserRole, f)
             self.list_widget.addItem(item)
@@ -1658,7 +1922,7 @@ class ContextSelectDialog(QDialog):
             except OSError:
                 continue
             if len(content) > self.MAX_FILE_CHARS:
-                content = content[:self.MAX_FILE_CHARS] + "\n# … (Datei gekürzt) …"
+                content = content[: self.MAX_FILE_CHARS] + "\n# … (Datei gekürzt) …"
             rel = os.path.relpath(full_path, path)
             entry = {"label": rel, "path": full_path, "content": content}
             item = QListWidgetItem(f"{rel}  ({os.path.basename(path)}/)")
@@ -1685,7 +1949,7 @@ class ContextSelectDialog(QDialog):
 
 
 # ----------------------------------------------------------------------
-# Gemini-Integration (gemini-2.5-flash)
+# Gemini-Integration (gemini-3.5-flash)
 # ----------------------------------------------------------------------
 class GeminiWorker(QThread):
     finished_ok = pyqtSignal(str)
@@ -1703,9 +1967,9 @@ class GeminiWorker(QThread):
                 f"https://generativelanguage.googleapis.com/v1beta/models/"
                 f"{self.model}:generateContent?key={self.api_key}"
             )
-            payload = json.dumps({
-                "contents": [{"parts": [{"text": self.prompt}]}]
-            }).encode("utf-8")
+            payload = json.dumps(
+                {"contents": [{"parts": [{"text": self.prompt}]}]}
+            ).encode("utf-8")
             req = urllib.request.Request(
                 url, data=payload, headers={"Content-Type": "application/json"}
             )
@@ -1740,7 +2004,9 @@ class GeminiPanel(QDockWidget):
         self._worker = None
         self._current_mode = "chat"
         self._last_response_code = ""
-        self.context_files = []  # [{"label","path","content"}, …] - zusätzlicher Kontext
+        self.context_files = (
+            []
+        )  # [{"label","path","content"}, …] - zusätzlicher Kontext
 
         container = QWidget()
         v = QVBoxLayout(container)
@@ -1839,7 +2105,9 @@ class GeminiPanel(QDockWidget):
         names = ", ".join(f["label"] for f in self.context_files[:6])
         if len(self.context_files) > 6:
             names += f" … (+{len(self.context_files) - 6} weitere)"
-        self.context_label.setText(f"📎 Kontext: {len(self.context_files)} Datei(en) – {names}")
+        self.context_label.setText(
+            f"📎 Kontext: {len(self.context_files)} Datei(en) – {names}"
+        )
 
     def _context_preamble(self):
         """Baut einen Prompt-Abschnitt aus den gewählten Kontext-Dateien
@@ -1847,7 +2115,9 @@ class GeminiPanel(QDockWidget):
         if not self.context_files:
             return ""
         char_limit = 120_000
-        parts = ["Zusätzlicher Kontext - weitere Projektdateien (nur zur Einordnung):\n"]
+        parts = [
+            "Zusätzlicher Kontext - weitere Projektdateien (nur zur Einordnung):\n"
+        ]
         total = 0
         omitted = 0
         for f in self.context_files:
@@ -1858,7 +2128,9 @@ class GeminiPanel(QDockWidget):
             parts.append(block)
             total += len(block)
         if omitted:
-            parts.append(f"\n[Hinweis: {omitted} weitere Kontext-Datei(en) wegen Längenbegrenzung ausgelassen.]\n")
+            parts.append(
+                f"\n[Hinweis: {omitted} weitere Kontext-Datei(en) wegen Längenbegrenzung ausgelassen.]\n"
+            )
         parts.append("\n---\n")
         return "".join(parts)
 
@@ -1873,13 +2145,15 @@ class GeminiPanel(QDockWidget):
             return ""
         cursor = editor.textCursor()
         if cursor.hasSelection():
-            return cursor.selectedText().replace('\u2029', '\n')
+            return cursor.selectedText().replace("\u2029", "\n")
         return editor.toPlainText()
 
     def _ask(self, mode):
         api_key = self.key_edit.text().strip()
         if not api_key:
-            QMessageBox.warning(self, "Gemini AI", "Bitte zuerst einen Gemini-API-Key eingeben.")
+            QMessageBox.warning(
+                self, "Gemini AI", "Bitte zuerst einen Gemini-API-Key eingeben."
+            )
             return
 
         code_ctx = self._selected_or_all_code()
@@ -1888,15 +2162,25 @@ class GeminiPanel(QDockWidget):
 
         if mode == "explain":
             if not code_ctx.strip():
-                QMessageBox.information(self, "Gemini AI", "Kein Code zum Erklären vorhanden.")
+                QMessageBox.information(
+                    self, "Gemini AI", "Kein Code zum Erklären vorhanden."
+                )
                 return
-            prompt = context_block + "Erkläre folgenden Python-Code kurz, klar und auf Deutsch:\n\n" + code_ctx
+            prompt = (
+                context_block
+                + "Erkläre folgenden Python-Code kurz, klar und auf Deutsch:\n\n"
+                + code_ctx
+            )
         elif mode == "fix":
             if not code_ctx.strip():
-                QMessageBox.information(self, "Gemini AI", "Kein Code zum Verbessern vorhanden.")
+                QMessageBox.information(
+                    self, "Gemini AI", "Kein Code zum Verbessern vorhanden."
+                )
                 return
             extra_note = (
-                "Die obigen Kontext-Dateien dienen NUR zur Orientierung. " if context_block else ""
+                "Die obigen Kontext-Dateien dienen NUR zur Orientierung. "
+                if context_block
+                else ""
             )
             prompt = (
                 context_block
@@ -1907,16 +2191,24 @@ class GeminiPanel(QDockWidget):
             )
         elif mode == "generate":
             if not user_prompt:
-                QMessageBox.information(self, "Gemini AI", "Bitte im Prompt-Feld beschreiben, was generiert werden soll.")
+                QMessageBox.information(
+                    self,
+                    "Gemini AI",
+                    "Bitte im Prompt-Feld beschreiben, was generiert werden soll.",
+                )
                 return
             extra_note = (
-                "Die obigen Kontext-Dateien dienen NUR zur Orientierung. " if context_block else ""
+                "Die obigen Kontext-Dateien dienen NUR zur Orientierung. "
+                if context_block
+                else ""
             )
             prompt = (
                 context_block
-                + "Schreibe Python-Code für folgende Aufgabe. " + extra_note
+                + "Schreibe Python-Code für folgende Aufgabe. "
+                + extra_note
                 + "Gib NUR den Code zurück - keine "
-                "Erklärung, keine Markdown-Codeblock-Markierungen. Aufgabe:\n\n" + user_prompt
+                "Erklärung, keine Markdown-Codeblock-Markierungen. Aufgabe:\n\n"
+                + user_prompt
             )
         else:  # chat
             if not user_prompt:
@@ -1997,8 +2289,24 @@ class MainWindow(QMainWindow):
 
         self.find_dialog = FindReplaceDialog(self.current_editor, self)
 
-        self.new_tab()
+        self._open_startup_files()
         self.apply_dark_theme()
+
+    def _open_startup_files(self):
+        """Öffnet Dateien, die beim Start über die Kommandozeile übergeben
+        wurden (z.B. durch Doppelklick auf eine Datei, wenn dieser Editor
+        als Standardprogramm eingestellt ist). Fällt auf einen leeren Tab
+        zurück, wenn keine gültige Datei übergeben wurde."""
+        opened_any = False
+        for arg in sys.argv[1:]:
+            # Kommandozeilen-Flags wie "--foo" ignorieren
+            if arg.startswith("-"):
+                continue
+            if os.path.isfile(arg):
+                self.open_file_from_path(arg)
+                opened_any = True
+        if not opened_any:
+            self.new_tab()
 
     # ---------------- Panes / Split-Screen ----------------
     def _create_pane(self):
@@ -2019,7 +2327,10 @@ class MainWindow(QMainWindow):
         pane.deleteLater()
         if self.active_pane is pane:
             self.active_pane = self.panes[0] if self.panes else None
-        if self.last_focused_editor is not None and getattr(self.last_focused_editor, "_pane", None) is pane:
+        if (
+            self.last_focused_editor is not None
+            and getattr(self.last_focused_editor, "_pane", None) is pane
+        ):
             self.last_focused_editor = None
 
     def _on_focus_changed(self, old, new):
@@ -2063,7 +2374,9 @@ class MainWindow(QMainWindow):
         )
         editor.cursorPositionChanged.connect(self.update_status_bar)
         editor.lintRequested.connect(lambda e=editor: self.lint_editor(e))
-        title = os.path.basename(editor._file_path) if editor._file_path else "Unbenannt"
+        title = (
+            os.path.basename(editor._file_path) if editor._file_path else "Unbenannt"
+        )
         index = pane.addTab(editor, title)
         pane.setCurrentIndex(index)
         editor.setFocus()
@@ -2096,9 +2409,11 @@ class MainWindow(QMainWindow):
         editor = pane.widget(index)
         if isinstance(editor, CodeEditor) and editor.document().isModified():
             res = QMessageBox.question(
-                self, APP_NAME,
-                f"„{pane.tabText(index).rstrip(' •')}" + "“ enthält ungespeicherte Änderungen.\nTrotzdem schließen?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                self,
+                APP_NAME,
+                f"„{pane.tabText(index).rstrip(' •')}"
+                + "“ enthält ungespeicherte Änderungen.\nTrotzdem schließen?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if res == QMessageBox.StandardButton.No:
                 return False
@@ -2119,7 +2434,7 @@ class MainWindow(QMainWindow):
     # ---------------- Datei-Operationen ----------------
     def open_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Datei öffnen", "", "Python-Dateien (*.py);;Alle Dateien (*)"
+            self, "Open File", "", "Python-Dateien (*.py);;Alle Dateien (*)"
         )
         if not path:
             return
@@ -2132,7 +2447,9 @@ class MainWindow(QMainWindow):
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
         except OSError as e:
-            QMessageBox.warning(self, APP_NAME, f"Datei konnte nicht geöffnet werden:\n{e}")
+            QMessageBox.warning(
+                self, APP_NAME, f"Datei konnte nicht geöffnet werden:\n{e}"
+            )
             return
         editor = self.new_tab(path=path, content=content)
         editor.document().setModified(False)
@@ -2157,7 +2474,10 @@ class MainWindow(QMainWindow):
         if not editor:
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Speichern unter", "skript.py", "Python-Dateien (*.py);;Alle Dateien (*)"
+            self,
+            "Speichern unter",
+            "skript.py",
+            "Python-Dateien (*.py);;Alle Dateien (*)",
         )
         if not path:
             return
@@ -2200,12 +2520,18 @@ class MainWindow(QMainWindow):
             lambda path: self.git_panel.set_repo_path(path)
         )
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.project_panel)
-        self.project_panel.visibilityChanged.connect(lambda _v: self._sync_sidebar_actions())
+        self.project_panel.visibilityChanged.connect(
+            lambda _v: self._sync_sidebar_actions()
+        )
 
     def _create_gemini_panel(self):
-        self.gemini_panel = GeminiPanel(self.current_editor, self._all_open_documents, self)
+        self.gemini_panel = GeminiPanel(
+            self.current_editor, self._all_open_documents, self
+        )
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.gemini_panel)
-        self.gemini_panel.visibilityChanged.connect(lambda _v: self._sync_sidebar_actions())
+        self.gemini_panel.visibilityChanged.connect(
+            lambda _v: self._sync_sidebar_actions()
+        )
 
     def _all_open_documents(self):
         """Liefert {"label","path","content"} für jedes offene Dokument -
@@ -2222,12 +2548,18 @@ class MainWindow(QMainWindow):
                 if doc_id in seen_docs:
                     continue
                 seen_docs.add(doc_id)
-                label = os.path.basename(editor._file_path) if editor._file_path else pane.tabText(i).rstrip(" •")
-                result.append({
-                    "label": label,
-                    "path": editor._file_path,
-                    "content": editor.toPlainText(),
-                })
+                label = (
+                    os.path.basename(editor._file_path)
+                    if editor._file_path
+                    else pane.tabText(i).rstrip(" •")
+                )
+                result.append(
+                    {
+                        "label": label,
+                        "path": editor._file_path,
+                        "content": editor.toPlainText(),
+                    }
+                )
         return result
 
     # ---------------- Linting ----------------
@@ -2247,7 +2579,9 @@ class MainWindow(QMainWindow):
         source = editor.toPlainText()
         worker = LintWorker(source, editor._file_path, self)
         editor._lint_worker = worker  # Referenz halten, bis Ergebnis eintrifft
-        worker.finished_lint.connect(lambda issues, e=editor: self._apply_lint_results(e, issues))
+        worker.finished_lint.connect(
+            lambda issues, e=editor: self._apply_lint_results(e, issues)
+        )
         worker.start()
 
     def _apply_lint_results(self, editor, issues):
@@ -2260,7 +2594,9 @@ class MainWindow(QMainWindow):
         if editor is None:
             self.problems_panel.clear_issues()
             return
-        label = os.path.basename(editor._file_path) if editor._file_path else "Unbenannt"
+        label = (
+            os.path.basename(editor._file_path) if editor._file_path else "Unbenannt"
+        )
         self.problems_panel.show_issues(getattr(editor, "_lint_issues", []), label)
 
     def _go_to_problem(self, line, col):
@@ -2272,8 +2608,9 @@ class MainWindow(QMainWindow):
             return
         cursor = QTextCursor(block)
         cursor.movePosition(
-            QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor,
-            min(max(0, col - 1), max(0, block.length() - 1))
+            QTextCursor.MoveOperation.Right,
+            QTextCursor.MoveMode.MoveAnchor,
+            min(max(0, col - 1), max(0, block.length() - 1)),
         )
         editor.setTextCursor(cursor)
         editor.setFocus()
@@ -2281,11 +2618,15 @@ class MainWindow(QMainWindow):
 
     # ---------------- Git ----------------
     def _create_git_panel(self):
-        self.git_panel = GitPanel(self._show_git_output, self, on_repo_opened=self._open_cloned_repo)
+        self.git_panel = GitPanel(
+            self._show_git_output, self, on_repo_opened=self._open_cloned_repo
+        )
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.git_panel)
         self.tabifyDockWidget(self.project_panel, self.git_panel)
         self.project_panel.raise_()
-        self.git_panel.visibilityChanged.connect(lambda _v: self._sync_sidebar_actions())
+        self.git_panel.visibilityChanged.connect(
+            lambda _v: self._sync_sidebar_actions()
+        )
 
     def _open_cloned_repo(self, path):
         """Wird nach erfolgreichem Klonen aufgerufen: öffnet den neuen
@@ -2335,7 +2676,7 @@ class MainWindow(QMainWindow):
         self.output.clear()
         self.output_dock.show()
         self.output_dock.raise_()
-        self.output.appendPlainText(f"$ python \"{editor._file_path}\"\n")
+        self.output.appendPlainText(f'$ python "{editor._file_path}"\n')
 
         if self.process is not None:
             self.process.kill()
@@ -2347,7 +2688,11 @@ class MainWindow(QMainWindow):
         self.process.start(sys.executable, ["-u", editor._file_path])
 
     def _read_process_output(self):
-        data = self.process.readAllStandardOutput().data().decode("utf-8", errors="replace")
+        data = (
+            self.process.readAllStandardOutput()
+            .data()
+            .decode("utf-8", errors="replace")
+        )
         self.output.moveCursor(QTextCursor.MoveOperation.End)
         self.output.insertPlainText(data)
         self.output.moveCursor(QTextCursor.MoveOperation.End)
@@ -2356,7 +2701,10 @@ class MainWindow(QMainWindow):
         self.output.appendPlainText(f"\n[Prozess beendet mit Code {exit_code}]")
 
     def stop_script(self):
-        if self.process is not None and self.process.state() != QProcess.ProcessState.NotRunning:
+        if (
+            self.process is not None
+            and self.process.state() != QProcess.ProcessState.NotRunning
+        ):
             self.process.kill()
             self.output.appendPlainText("\n[Vom Benutzer abgebrochen]")
 
@@ -2396,96 +2744,332 @@ class MainWindow(QMainWindow):
 
     # ---------------- Aktionen / Menü / Toolbar ----------------
     def _create_actions(self):
-        ic, tx = themed("fa5s.file", "&Neu")
-        self.act_new = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.New, triggered=self.new_tab)
-        ic, tx = themed("fa5s.folder-open", "&Öffnen…")
-        self.act_open = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Open, triggered=self.open_file)
-        ic, tx = themed("fa5s.save", "&Speichern")
-        self.act_save = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Save, triggered=self.save_file)
-        ic, tx = themed("fa5s.file-export", "Speichern &unter…")
-        self.act_save_as = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.SaveAs, triggered=self.save_file_as)
-        ic, tx = themed("fa5s.times", "Tab schließen")
-        self.act_close_tab = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Close,
-                                      triggered=self._close_current_tab)
-        ic, tx = themed("fa5s.sign-out-alt", "&Beenden")
-        self.act_exit = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close)
+        ic, tx = themed("fa5s.file", "&New")
+        self.act_new = QAction(
+            ic, tx, self, shortcut=QKeySequence.StandardKey.New, triggered=self.new_tab
+        )
+        ic, tx = themed("fa5s.folder-open", "&Open…")
+        self.act_open = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Open,
+            triggered=self.open_file,
+        )
+        ic, tx = themed("fa5s.save", "&Save")
+        self.act_save = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Save,
+            triggered=self.save_file,
+        )
+        ic, tx = themed("fa5s.file-export", "Save &as…")
+        self.act_save_as = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.SaveAs,
+            triggered=self.save_file_as,
+        )
+        ic, tx = themed("fa5s.times", "Close Tab")
+        self.act_close_tab = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Close,
+            triggered=self._close_current_tab,
+        )
+        ic, tx = themed("fa5s.sign-out-alt", "&Exit")
+        self.act_exit = QAction(
+            ic, tx, self, shortcut=QKeySequence.StandardKey.Quit, triggered=self.close
+        )
 
-        ic, tx = themed("fa5s.undo", "Rückgängig")
-        self.act_undo = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Undo,
-                                 triggered=lambda: self.current_editor() and self.current_editor().undo())
-        ic, tx = themed("fa5s.redo", "Wiederholen")
-        self.act_redo = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Redo,
-                                 triggered=lambda: self.current_editor() and self.current_editor().redo())
-        ic, tx = themed("fa5s.cut", "Ausschneiden")
-        self.act_cut = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Cut,
-                                triggered=lambda: self.current_editor() and self.current_editor().cut())
-        ic, tx = themed("fa5s.copy", "Kopieren")
-        self.act_copy = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Copy,
-                                 triggered=lambda: self.current_editor() and self.current_editor().copy())
-        ic, tx = themed("fa5s.paste", "Einfügen")
-        self.act_paste = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Paste,
-                                  triggered=lambda: self.current_editor() and self.current_editor().paste())
-        ic, tx = themed("fa5s.search", "&Suchen/Ersetzen…")
-        self.act_find = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.Find,
-                                 triggered=self.show_find_dialog)
-        ic, tx = themed("fa5s.magic", "Vorschläge anzeigen")
-        self.act_complete = QAction(ic, tx, self, shortcut="Ctrl+Space",
-                                     triggered=self._trigger_completion)
+        ic, tx = themed("fa5s.undo", "Undo")
+        self.act_undo = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Undo,
+            triggered=lambda: self.current_editor() and self.current_editor().undo(),
+        )
+        ic, tx = themed("fa5s.redo", "Repeat")
+        self.act_redo = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Redo,
+            triggered=lambda: self.current_editor() and self.current_editor().redo(),
+        )
+        ic, tx = themed("fa5s.cut", "Cut")
+        self.act_cut = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Cut,
+            triggered=lambda: self.current_editor() and self.current_editor().cut(),
+        )
+        ic, tx = themed("fa5s.copy", "Copy")
+        self.act_copy = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Copy,
+            triggered=lambda: self.current_editor() and self.current_editor().copy(),
+        )
+        ic, tx = themed("fa5s.paste", "Paste")
+        self.act_paste = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Paste,
+            triggered=lambda: self.current_editor() and self.current_editor().paste(),
+        )
+        ic, tx = themed("fa5s.search", "&Serach/Replace…")
+        self.act_find = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.Find,
+            triggered=self.show_find_dialog,
+        )
+        ic, tx = themed("fa5s.magic", "Show suggestion")
+        self.act_complete = QAction(
+            ic, tx, self, shortcut="Ctrl+Space", triggered=self._trigger_completion
+        )
 
-        ic, tx = themed("fa5s.play", "Skript ausführen", emoji_fallback="▶", color="#89d185")
+        ic, tx = themed("fa5s.play", "Run", emoji_fallback="▶", color="#89d185")
         self.act_run = QAction(ic, tx, self, shortcut="F5", triggered=self.run_script)
-        ic, tx = themed("fa5s.stop", "Stoppen", emoji_fallback="■", color="#f14c4c")
-        self.act_stop = QAction(ic, tx, self, shortcut="Shift+F5", triggered=self.stop_script)
-        ic, tx = themed("fa5s.terminal", "Skript in Konsole laden")
-        self.act_load_console = QAction(ic, tx, self, shortcut="Ctrl+F5",
-                                         triggered=self.load_current_script_into_console)
+        ic, tx = themed("fa5s.stop", "Stop", emoji_fallback="■", color="#f14c4c")
+        self.act_stop = QAction(
+            ic, tx, self, shortcut="Shift+F5", triggered=self.stop_script
+        )
+        ic, tx = themed("fa5s.terminal", "Load in Terminal")
+        self.act_load_console = QAction(
+            ic,
+            tx,
+            self,
+            shortcut="Ctrl+F5",
+            triggered=self.load_current_script_into_console,
+        )
 
-        ic, tx = themed("fa5s.search-plus", "Vergrößern")
-        self.act_zoom_in = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.ZoomIn,
-                                    triggered=lambda: self.current_editor() and self.current_editor().zoom(1))
-        ic, tx = themed("fa5s.search-minus", "Verkleinern")
-        self.act_zoom_out = QAction(ic, tx, self, shortcut=QKeySequence.StandardKey.ZoomOut,
-                                     triggered=lambda: self.current_editor() and self.current_editor().zoom(-1))
-        ic, tx = themed("fa5s.font", "Schriftart…")
+        ic, tx = themed("fa5s.search-plus", "Zoom IN")
+        self.act_zoom_in = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.ZoomIn,
+            triggered=lambda: self.current_editor() and self.current_editor().zoom(1),
+        )
+        ic, tx = themed("fa5s.search-minus", "Zoom OUT")
+        self.act_zoom_out = QAction(
+            ic,
+            tx,
+            self,
+            shortcut=QKeySequence.StandardKey.ZoomOut,
+            triggered=lambda: self.current_editor() and self.current_editor().zoom(-1),
+        )
+        ic, tx = themed("fa5s.font", "Font…")
         self.act_font = QAction(ic, tx, self, triggered=self.choose_font)
 
-        ic, tx = themed("fa5s.columns", "Nebeneinander teilen")
-        self.act_split_h = QAction(ic, tx, self, shortcut="Ctrl+\\",
-                                    triggered=lambda: self.split_view(Qt.Orientation.Horizontal))
-        ic, tx = themed("fa5s.grip-lines", "Übereinander teilen")
-        self.act_split_v = QAction(ic, tx, self, shortcut="Ctrl+Shift+\\",
-                                    triggered=lambda: self.split_view(Qt.Orientation.Vertical))
+        ic, tx = themed("fa5s.columns", "Split Vertical")
+        self.act_split_h = QAction(
+            ic,
+            tx,
+            self,
+            shortcut="Ctrl+\\",
+            triggered=lambda: self.split_view(Qt.Orientation.Horizontal),
+        )
+        ic, tx = themed("fa5s.grip-lines", "Split Horizontal")
+        self.act_split_v = QAction(
+            ic,
+            tx,
+            self,
+            shortcut="Ctrl+Shift+\\",
+            triggered=lambda: self.split_view(Qt.Orientation.Vertical),
+        )
 
-        ic, tx = themed("fa5s.folder-plus", "Projektordner öffnen…")
-        self.act_open_project = QAction(ic, tx, self, shortcut="Ctrl+K, Ctrl+O",
-                                         triggered=lambda: self.project_panel.open_folder())
+        ic, tx = themed("fa5s.folder-plus", "Open Project…")
+        self.act_open_project = QAction(
+            ic,
+            tx,
+            self,
+            shortcut="Ctrl+K, Ctrl+O",
+            triggered=lambda: self.project_panel.open_folder(),
+        )
 
-        ic, tx = themed("fa5s.check-double", "Jetzt prüfen")
-        self.act_lint_now = QAction(ic, tx, self, shortcut="Ctrl+Shift+M",
-                                     triggered=lambda: self.current_editor() and self.lint_editor(self.current_editor()))
+        ic, tx = themed("fa5s.check-double", "Start Debug")
+        self.act_lint_now = QAction(
+            ic,
+            tx,
+            self,
+            shortcut="Ctrl+Shift+M",
+            triggered=lambda: self.current_editor()
+            and self.lint_editor(self.current_editor()),
+        )
 
-        ic, tx = themed("fa5s.code-branch", "Repository öffnen…")
+        ic, tx = themed("fa5s.code-branch", "Open Repo…")
         self.act_git_open = QAction(ic, tx, self, triggered=self._git_open_repo_dialog)
         ic, tx = themed("fa5s.sync", "Status aktualisieren")
-        self.act_git_refresh = QAction(ic, tx, self, shortcut="Ctrl+Shift+G",
-                                        triggered=lambda: self.git_panel.refresh())
+        self.act_git_refresh = QAction(
+            ic,
+            tx,
+            self,
+            shortcut="Ctrl+Shift+G",
+            triggered=lambda: self.git_panel.refresh(),
+        )
         ic, tx = themed("fa5s.check", "Commit…")
         self.act_git_commit = QAction(ic, tx, self, triggered=self._git_focus_commit)
         ic, tx = themed("fa5s.arrow-up", "Push")
-        self.act_git_push = QAction(ic, tx, self, triggered=lambda: self.git_panel._run("push", ["push"]))
+        self.act_git_push = QAction(
+            ic, tx, self, triggered=lambda: self.git_panel._run("push", ["push"])
+        )
         ic, tx = themed("fa5s.arrow-down", "Pull")
-        self.act_git_pull = QAction(ic, tx, self, triggered=lambda: self.git_panel._run("pull", ["pull"]))
+        self.act_git_pull = QAction(
+            ic, tx, self, triggered=lambda: self.git_panel._run("pull", ["pull"])
+        )
 
         ic, tx = themed("fa5s.info-circle", "Über " + APP_NAME)
         self.act_about = QAction(ic, tx, self, triggered=self.show_about)
 
-        ic, tx = themed("fa5s.angle-double-left", "Linke Seitenleiste ein-/ausblenden")
-        self.act_toggle_left_sidebar = QAction(ic, tx, self, shortcut="Ctrl+B", checkable=True)
+        # -- Externe Pandora-Tools (JSON/YAML- & SQL-Config-Editor) --
+        ic, tx = themed("fa5s.file-code", "JSON/YAML-Editor", "🗂")
+        self.act_tool_json_yaml = QAction(
+            ic, tx, self, triggered=self.launch_json_yaml_editor
+        )
+        self.act_tool_json_yaml.setToolTip("Pandora JSON/YAML Config Editor öffnen")
+
+        ic, tx = themed("fa5s.database", "SQL-Config-Editor", "🗄")
+        self.act_tool_sql_config = QAction(
+            ic, tx, self, triggered=self.launch_sql_config_editor
+        )
+        self.act_tool_sql_config.setToolTip(
+            "Pandora SQL Config Editor & Validator öffnen"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (JSON/YAML-Editor)…")
+        self.act_tool_json_yaml_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_json_yaml_editor(force_repath=True),
+        )
+        ic, tx = themed("fa5s.edit", "Pfad ändern (SQL-Config-Editor)…")
+        self.act_tool_sql_config_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_sql_config_editor(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.globe", "Web-Editor (HTML/CSS/JS)", "🌐")
+        self.act_tool_web_editor = QAction(
+            ic, tx, self, triggered=self.launch_web_editor
+        )
+        self.act_tool_web_editor.setToolTip(
+            "Pandora Web Editor öffnen (HTML/CSS/JS mit Live-Vorschau)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (Web-Editor)…")
+        self.act_tool_web_editor_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_web_editor(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.key", "Crypto & Encoding Utility", "🔐")
+        self.act_tool_crypto = QAction(
+            ic, tx, self, triggered=self.launch_crypto_tool
+        )
+        self.act_tool_crypto.setToolTip(
+            "Pandora Crypto & Encoding Utility öffnen (Base64/Hex/URL/HTML, "
+            "Hash & HMAC, JWT-Inspector, RegEx-Tester)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (Crypto & Encoding Utility)…")
+        self.act_tool_crypto_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_crypto_tool(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.palette", "UI Asset & Color Studio", "🎨")
+        self.act_tool_ui_asset_color_studio = QAction(
+            ic, tx, self, triggered=self.launch_ui_asset_color_studio
+        )
+        self.act_tool_ui_asset_color_studio.setToolTip(
+            "Pandora UI Asset & Color Studio öffnen (Farb-Picker & Konverter, "
+            "Theming-Variablen-Manager, Icon & Asset Browser)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (UI Asset & Color Studio)…")
+        self.act_tool_ui_asset_color_studio_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_ui_asset_color_studio(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.cubes", "Environment & Dependency Manager", "📦")
+        self.act_tool_env_dependency_manager = QAction(
+            ic, tx, self, triggered=self.launch_env_dependency_manager
+        )
+        self.act_tool_env_dependency_manager.setToolTip(
+            "Pandora Environment & Dependency Manager öffnen (Virtualenv "
+            "Control, Package Installer für pip/npm, Abhängigkeits-Übersicht)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (Environment & Dependency Manager)…")
+        self.act_tool_env_dependency_manager_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_env_dependency_manager(force_repath=True),
+        )
+
+        # -- Code Snippet Vault: läuft NICHT als externer Prozess, sondern
+        # wird per importlib direkt in diesen Prozess geladen, damit Quick-
+        # Insert Text an der Cursor-Position des aktiven Editors einfügen
+        # kann (siehe launch_web_editor/launch_json_yaml_editor oben für
+        # den Kontrast: die starten jeweils ein eigenes, unabhängiges
+        # Fenster als Subprozess).
+        ic, tx = themed("fa5s.magic", "Code Snippet Vault…", "🧩")
+        self.act_tool_snippet_vault = QAction(
+            ic, tx, self, triggered=self.open_snippet_vault
+        )
+        self.act_tool_snippet_vault.setToolTip(
+            "Pandora Code Snippet Vault öffnen (Bibliothek durchsuchen/verwalten)"
+        )
+
+        ic, tx = themed("fa5s.bolt", "Schnell-Einfügen (Snippet)…", "⚡")
+        self.act_tool_snippet_quick_insert = QAction(
+            ic, tx, self, shortcut="Ctrl+Alt+I", triggered=self.quick_insert_snippet
+        )
+        self.act_tool_snippet_quick_insert.setToolTip(
+            "Snippet per Schnellsuche direkt an der Cursor-Position einfügen"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (Snippet Vault)…")
+        self.act_tool_snippet_vault_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.open_snippet_vault(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.angle-double-left", "Project show-/hide")
+        self.act_toggle_left_sidebar = QAction(
+            ic, tx, self, shortcut="Ctrl+B", checkable=True
+        )
         self.act_toggle_left_sidebar.setChecked(True)
         self.act_toggle_left_sidebar.toggled.connect(self._toggle_left_sidebar)
 
-        ic, tx = themed("fa5s.angle-double-right", "Rechte Seitenleiste ein-/ausblenden")
-        self.act_toggle_right_sidebar = QAction(ic, tx, self, shortcut="Ctrl+Alt+B", checkable=True)
+        ic, tx = themed("fa5s.angle-double-right", "AI show-/hide")
+        self.act_toggle_right_sidebar = QAction(
+            ic, tx, self, shortcut="Ctrl+Alt+B", checkable=True
+        )
         self.act_toggle_right_sidebar.setChecked(True)
         self.act_toggle_right_sidebar.toggled.connect(self._toggle_right_sidebar)
 
@@ -2548,6 +3132,8 @@ class MainWindow(QMainWindow):
         m_edit.addSeparator()
         m_edit.addAction(self.act_find)
         m_edit.addAction(self.act_complete)
+        m_edit.addSeparator()
+        m_edit.addAction(self.act_tool_snippet_quick_insert)
 
         m_project = menu.addMenu("&Projekt")
         m_project.addAction(self.act_open_project)
@@ -2556,7 +3142,9 @@ class MainWindow(QMainWindow):
         m_lint = menu.addMenu("&Linting")
         m_lint.addAction(self.act_lint_now)
         m_lint.addAction(self.problems_panel.toggleViewAction())
-        pyflakes_status = "aktiv" if HAVE_PYFLAKES else "nicht installiert (nur Syntaxprüfung)"
+        pyflakes_status = (
+            "aktiv" if HAVE_PYFLAKES else "nicht installiert (nur Syntaxprüfung)"
+        )
         m_lint.addSeparator()
         act_lint_info = QAction(f"pyflakes: {pyflakes_status}", self)
         act_lint_info.setEnabled(False)
@@ -2593,6 +3181,25 @@ class MainWindow(QMainWindow):
         m_run.addSeparator()
         m_run.addAction(self.act_load_console)
 
+        m_tools = menu.addMenu("&Werkzeuge")
+        m_tools.addAction(self.act_tool_json_yaml)
+        m_tools.addAction(self.act_tool_sql_config)
+        m_tools.addAction(self.act_tool_web_editor)
+        m_tools.addAction(self.act_tool_crypto)
+        m_tools.addAction(self.act_tool_ui_asset_color_studio)
+        m_tools.addAction(self.act_tool_env_dependency_manager)
+        m_tools.addSeparator()
+        m_tools.addAction(self.act_tool_snippet_vault)
+        m_tools.addAction(self.act_tool_snippet_quick_insert)
+        m_tools.addSeparator()
+        m_tools.addAction(self.act_tool_json_yaml_repath)
+        m_tools.addAction(self.act_tool_sql_config_repath)
+        m_tools.addAction(self.act_tool_web_editor_repath)
+        m_tools.addAction(self.act_tool_crypto_repath)
+        m_tools.addAction(self.act_tool_ui_asset_color_studio_repath)
+        m_tools.addAction(self.act_tool_env_dependency_manager_repath)
+        m_tools.addAction(self.act_tool_snippet_vault_repath)
+
         m_help = menu.addMenu("&Hilfe")
         m_help.addAction(self.act_about)
 
@@ -2622,6 +3229,16 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_run)
         tb.addAction(self.act_stop)
         tb.addAction(self.act_load_console)
+        tb.addSeparator()
+        tb.addAction(self.act_tool_json_yaml)
+        tb.addAction(self.act_tool_sql_config)
+        tb.addAction(self.act_tool_web_editor)
+        tb.addAction(self.act_tool_crypto)
+        tb.addAction(self.act_tool_ui_asset_color_studio)
+        tb.addAction(self.act_tool_env_dependency_manager)
+        tb.addSeparator()
+        tb.addAction(self.act_tool_snippet_vault)
+        tb.addAction(self.act_tool_snippet_quick_insert)
 
     def _create_status_bar(self):
         self.status = QStatusBar()
@@ -2663,21 +3280,281 @@ class MainWindow(QMainWindow):
                     if isinstance(w, CodeEditor):
                         w.setFont(font)
 
+    # ---------------- Externe Pandora-Tools ----------------
+    def _resolve_tool_path(
+        self, cfg_key, dialog_title, name_filter, force_repath=False
+    ):
+        """Ermittelt den Pfad zum Einstiegs-Skript eines externen Pandora-Tools.
+        Liest ihn (falls vorhanden) aus der Config, oder fragt den Benutzer
+        einmalig über einen Dateidialog und merkt sich die Auswahl dauerhaft.
+        Mit force_repath=True wird immer neu nachgefragt (z.B. wenn das Tool
+        verschoben wurde)."""
+        cfg = load_config()
+        path = cfg.get(cfg_key)
+        if not force_repath and path and os.path.isfile(path):
+            return path
+
+        start_dir = os.path.dirname(path) if path else os.path.expanduser("~")
+        chosen, _ = QFileDialog.getOpenFileName(
+            self, dialog_title, start_dir, name_filter
+        )
+        if not chosen:
+            return None
+        cfg[cfg_key] = chosen
+        save_config(cfg)
+        return chosen
+
+    def _launch_external_tool(self, script_path, extra_args=None, friendly_name="Tool"):
+        """Startet ein externes Pandora-Tool als eigenständigen Prozess (eigene
+        QApplication), damit es unabhängig vom Script Editor läuft und es
+        keine Namenskonflikte mit dessen Klassen gibt (z.B. eigene
+        'MainWindow'-Klassen)."""
+        try:
+            args = [sys.executable, script_path] + list(extra_args or [])
+            subprocess.Popen(args, cwd=os.path.dirname(script_path) or None)
+            self.statusBar().showMessage(f"{friendly_name} gestartet…", 3000)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                f"{friendly_name} konnte nicht gestartet werden",
+                f"Fehler beim Start:\n{e}",
+            )
+
+    def launch_json_yaml_editor(self, force_repath=False):
+        """Öffnet den Pandora JSON/YAML Config Editor. Ist gerade eine
+        .json/.yaml/.yml-Datei im Editor aktiv, wird sie direkt mitgegeben."""
+        path = self._resolve_tool_path(
+            CFG_KEY_JSON_YAML_EDITOR,
+            "Pandora JSON/YAML Editor auswählen (pandora_config_editor.py)",
+            "Python-Datei (*.py)",
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+
+        extra_args = []
+        editor = self.current_editor()
+        if editor is not None and getattr(editor, "_file_path", None):
+            ext = os.path.splitext(editor._file_path)[1].lower()
+            if ext in (".json", ".yaml", ".yml"):
+                extra_args.append(editor._file_path)
+
+        self._launch_external_tool(path, extra_args, "Pandora JSON/YAML Editor")
+
+    def launch_sql_config_editor(self, force_repath=False):
+        """Öffnet den Pandora SQL Config Editor & Validator (main.py des
+        pandora_sql_config_editor-Pakets)."""
+        path = self._resolve_tool_path(
+            CFG_KEY_SQL_CONFIG_EDITOR,
+            "main.py des Pandora SQL Config Editors auswählen",
+            "Python-Datei (*.py)",
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+        self._launch_external_tool(path, friendly_name="Pandora SQL Config Editor")
+
+    def launch_web_editor(self, force_repath=False):
+        """Öffnet den Pandora Web Editor (HTML/CSS/JS mit Live-Vorschau).
+        Ist gerade eine .html/.htm-Datei im Editor aktiv, wird sie direkt
+        mitgegeben."""
+        path = self._resolve_tool_path(
+            CFG_KEY_WEB_EDITOR,
+            "Pandora Web Editor auswählen (pandora_web_editor.py)",
+            "Python-Datei (*.py)",
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+
+        extra_args = []
+        editor = self.current_editor()
+        if editor is not None and getattr(editor, "_file_path", None):
+            file_path = editor._file_path
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in (".html", ".htm"):
+                extra_args.append(file_path)
+
+        self._launch_external_tool(path, extra_args, "Pandora Web Editor")
+
+    def launch_crypto_tool(self, force_repath=False):
+        """Öffnet das Pandora Crypto & Encoding Utility (Base64/Hex/URL/
+        HTML-Encoder, Hash- & HMAC-Generator, JWT-Inspector, RegEx-Tester).
+        Läuft wie der SQL Config Editor als eigenständiger Prozess, da es
+        keinen Bezug zu einem bestimmten Dateityp im aktiven Editor hat."""
+        path = self._resolve_tool_path(
+            CFG_KEY_CRYPTO_TOOL,
+            "pandora_crypto_tool.py auswählen (Pandora Crypto & Encoding Utility)",
+            "Python-Datei (*.py)",
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+        self._launch_external_tool(path, friendly_name="Pandora Crypto & Encoding Utility")
+
+    def launch_ui_asset_color_studio(self, force_repath=False):
+        """Öffnet das Pandora UI Asset & Color Studio (Farb-Picker &
+        Konverter, Theming-Variablen-Manager, Icon & Asset Browser). Läuft
+        wie der SQL Config Editor als eigenständiger Prozess, da es keinen
+        Bezug zu einem bestimmten Dateityp im aktiven Editor hat."""
+        path = self._resolve_tool_path(
+            CFG_KEY_UI_ASSET_COLOR_STUDIO,
+            "pandora_ui_asset_color_studio.py auswählen (Pandora UI Asset & Color Studio)",
+            "Python-Datei (*.py)",
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+        self._launch_external_tool(path, friendly_name="Pandora UI Asset & Color Studio")
+
+    def launch_env_dependency_manager(self, force_repath=False):
+        """Öffnet den Pandora Environment & Dependency Manager (Virtualenv
+        Control, Package Installer für pip/npm, Abhängigkeits-Übersicht).
+        Läuft wie der SQL Config Editor als eigenständiger Prozess, da es
+        keinen Bezug zu einem bestimmten Dateityp im aktiven Editor hat."""
+        path = self._resolve_tool_path(
+            CFG_KEY_ENV_DEPENDENCY_MANAGER,
+            "pandora_env_dependency_manager.py auswählen (Pandora Environment & Dependency Manager)",
+            "Python-Datei (*.py)",
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+        self._launch_external_tool(path, friendly_name="Pandora Environment & Dependency Manager")
+
+    # ---------------- Code Snippet Vault (In-Prozess-Integration) ----------------
+    def _get_snippet_vault_module(self, force_repath=False):
+        """Lädt pandora_snippet_vault.py per importlib DIREKT in diesen
+        Prozess (kein subprocess!), damit Quick-Insert Text an der
+        Cursor-Position des aktiven Editors einfügen kann. Der geladene
+        Modul-Objekt wird zwischengespeichert, solange sich der Pfad nicht
+        ändert."""
+        path = self._resolve_tool_path(
+            CFG_KEY_SNIPPET_VAULT,
+            "Pandora Code Snippet Vault auswählen (pandora_snippet_vault.py)",
+            "Python-Datei (*.py)",
+            force_repath=force_repath,
+        )
+        if not path:
+            return None
+
+        cached_path = getattr(self, "_snippet_vault_module_path", None)
+        cached_module = getattr(self, "_snippet_vault_module", None)
+        if not force_repath and cached_module is not None and cached_path == path:
+            return cached_module
+
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "pandora_snippet_vault_dynamic", path
+            )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Snippet Vault konnte nicht geladen werden",
+                f"Fehler beim Import von\n{path}:\n\n{e}"
+            )
+            return None
+
+        self._snippet_vault_module = module
+        self._snippet_vault_module_path = path
+        self._snippet_vault_store = None  # Bibliothek bei (Neu-)Laden des Moduls neu öffnen
+        return module
+
+    def _get_snippet_store(self, module):
+        store = getattr(self, "_snippet_vault_store", None)
+        if store is None:
+            store = module.SnippetStore()
+            self._snippet_vault_store = store
+        return store
+
+    def _insert_snippet_text(self, editor, text):
+        """Fügt den fertig gerenderten Snippet-Text an der aktuellen Cursor-
+        Position des übergebenen Editors ein. Mehrzeilige Snippets werden
+        dabei auf die aktuelle Zeileneinrückung ausgerichtet, damit sie sich
+        sauber in bestehenden, eingerückten Code einfügen."""
+        cursor = editor.textCursor()
+        current_line = cursor.block().text()
+        indent_match = re.match(r"[ \t]*", current_line)
+        indent = indent_match.group(0) if indent_match else ""
+
+        lines = text.split("\n")
+        if len(lines) > 1:
+            text = ("\n" + indent).join(lines)
+
+        cursor.insertText(text)
+        editor.setFocus()
+        self.statusBar().showMessage("Snippet eingefügt.", 3000)
+
+    def open_snippet_vault(self, force_repath=False):
+        """Öffnet den vollständigen Vault-Browser (Suchen/Filtern/Verwalten).
+        Ist ein Editor-Tab aktiv, kann direkt daraus eingefügt werden -
+        andernfalls landet das gewählte Snippet in der Zwischenablage."""
+        module = self._get_snippet_vault_module(force_repath=force_repath)
+        if module is None:
+            return
+        store = self._get_snippet_store(module)
+
+        target_editor = self.current_editor()
+        callback = None
+        if target_editor is not None:
+            callback = lambda text, ed=target_editor: self._insert_snippet_text(ed, text)
+
+        dlg = module.SnippetVaultDialog(store, insert_callback=callback, parent=self)
+        dlg.exec()
+
+    def quick_insert_snippet(self):
+        """Schnellsuche: öffnet ein schmales Suchfenster, Enter fügt das
+        Snippet sofort an der aktuellen Cursor-Position ein."""
+        editor = self.current_editor()
+        if editor is None:
+            QMessageBox.information(
+                self, "Kein aktiver Editor",
+                "Bitte zuerst einen Datei-Tab öffnen oder erstellen, um ein Snippet einzufügen."
+            )
+            return
+
+        module = self._get_snippet_vault_module()
+        if module is None:
+            return
+        store = self._get_snippet_store(module)
+
+        popup = module.QuickInsertPopup(
+            store,
+            insert_callback=lambda text, ed=editor: self._insert_snippet_text(ed, text),
+            parent=self,
+        )
+        popup.exec()
+
     def show_about(self):
-        jedi_status = "aktiv (kontextbezogene Vorschläge via Jedi)" if HAVE_JEDI else "nicht installiert (nur Wortvervollständigung)"
-        pyflakes_status = "aktiv" if HAVE_PYFLAKES else "nicht installiert (nur Syntaxprüfung via ast)"
-        icon_status = "aktiv (FontAwesome via QtAwesome)" if HAVE_QTAWESOME else "nicht installiert (Emoji-Fallback)"
+        jedi_status = (
+            "aktiv (kontextbezogene Vorschläge via Jedi)"
+            if HAVE_JEDI
+            else "nicht installiert (nur Wortvervollständigung)"
+        )
+        pyflakes_status = (
+            "aktiv"
+            if HAVE_PYFLAKES
+            else "nicht installiert (nur Syntaxprüfung via ast)"
+        )
+        icon_status = (
+            "aktiv (FontAwesome via QtAwesome)"
+            if HAVE_QTAWESOME
+            else "nicht installiert (Emoji-Fallback)"
+        )
         QMessageBox.information(
-            self, "Über " + APP_NAME,
+            self,
+            "Über " + APP_NAME,
             f"<h3>{APP_NAME}</h3>"
             "<p>Ein schlanker Python-Script-Editor mit PyQt6.</p>"
             "<p>Syntaxhervorhebung · Mehrere Tabs · Suchen &amp; Ersetzen · Skriptausführung · "
             "Projekt-Panel · Autovervollständigung · Linting · Git-Integration · "
-            "Gemini-KI (mit Multi-Datei-Kontext) · Interaktive Konsole</p>"
+            "Gemini-KI (mit Multi-Datei-Kontext) · Interaktive Konsole · "
+            "Code Snippet Vault (Quick-Insert per Ctrl+Alt+I)</p>"
             f"<p>Jedi-Autovervollständigung: {jedi_status}<br>"
             f"Lint-Engine (pyflakes): {pyflakes_status}<br>"
             f"Icon-Theme: {icon_status}<br>"
-            f"Gemini-Modell: {GEMINI_MODEL}</p>"
+            f"Gemini-Modell: {GEMINI_MODEL}</p>",
         )
 
     # ---------------- Fenster schließen ----------------
@@ -2686,7 +3563,10 @@ class MainWindow(QMainWindow):
         for pane in self.panes:
             for i in range(pane.count()):
                 editor = pane.widget(i)
-                if not isinstance(editor, CodeEditor) or not editor.document().isModified():
+                if (
+                    not isinstance(editor, CodeEditor)
+                    or not editor.document().isModified()
+                ):
                     continue
                 doc_id = id(editor.document())
                 if doc_id in checked_documents:
@@ -2694,9 +3574,10 @@ class MainWindow(QMainWindow):
                 checked_documents.add(doc_id)
                 pane.setCurrentIndex(i)
                 res = QMessageBox.question(
-                    self, APP_NAME,
+                    self,
+                    APP_NAME,
                     f"„{pane.tabText(i).rstrip(' •')}“ enthält ungespeicherte Änderungen.\nTrotzdem beenden?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if res == QMessageBox.StandardButton.No:
                     event.ignore()
@@ -2830,14 +3711,16 @@ def _install_excepthook():
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
-        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        tb_text = "".join(
+            traceback.format_exception(exc_type, exc_value, exc_traceback)
+        )
         print(tb_text, file=sys.stderr)
         try:
             QMessageBox.critical(
                 None,
                 "Unerwarteter Fehler",
                 f"Es ist ein unerwarteter Fehler aufgetreten:\n\n{exc_value}\n\n"
-                "Details wurden auf der Konsole ausgegeben."
+                "Details wurden auf der Konsole ausgegeben.",
             )
         except Exception:
             pass
