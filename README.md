@@ -31,22 +31,79 @@ Eine PyQt6-basierte Python-IDE mit integrierter Gemini-KI-Unterstützung, Live-L
   `Strg+B` (links: Projekt/Git) und `Strg+Alt+B` (rechts: Gemini), wie in VS Code.
 - **QtAwesome-Icon-Theme** mit Emoji-/Text-Fallback, falls `qtawesome` nicht installiert ist.
 
+## Enthaltene Werkzeuge
+
+| Werkzeug | Pfad | Kurzbeschreibung |
+|---|---|---|
+| **Haupteditor** | `pandora_script_editor.py` | Code-Editor mit Projekt-Sidebar, Git-Integration, AI-Panel, Vervollständigung (jedi/pyflakes) |
+| JSON/YAML/YARA-Editor | `tools/pandora_json_yaml_yara_editor/` | Bearbeiten & Validieren von JSON-, YAML- und YARA-Dateien |
+| SQL Config Editor & Validator | `tools/pandora_sql_config_editor/` | SQLite/MySQL-Konfigurationsverwaltung mit Validierung & Backup |
+| Web Editor | `tools/pandora_web_editor/` | HTML/CSS/JS-Editor mit Live-Vorschau |
+| Code Snippet Vault | `tools/pandora_snippet_vault/` | Snippet-Bibliothek mit Schnell-Einfügen (läuft in-process) |
+| **Crypto & Encoding Utility** | `tools/pandora_crypto_tool/` | Encoder/Decoder, Hash/HMAC, JWT-Inspector, RegEx-Tester (siehe unten) |
+| **UI Asset & Color Studio** | `tools/pandora_ui_asset_color_studio/` | Farb-Picker & Konverter (HEX/RGB/RGBA/QColor), Theming-Variablen-Manager, Icon & Asset Browser (siehe unten) |
+| **Environment & Dependency Manager** | `tools/pandora_env_dependency_manager/` | Virtualenv Control, Package Installer (pip/npm), Abhängigkeits-Übersicht (siehe unten) |
+
+Alle externen Werkzeuge werden aus dem Haupteditor über das Menü
+**Werkzeuge** bzw. die Toolbar gestartet und laufen als eigenständiger
+Prozess (Ausnahme: Snippet Vault, siehe Kommentar im Code).
+
 ## 📦 Installation
 
 ```bash
-git clone https://github.com/<dein-benutzername>/pandora-script-editor.git
+git clone <repo-url>
 cd pandora-script-editor
-python3 -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Nur `PyQt6` ist zwingend erforderlich. `qtawesome`, `pyflakes` und `jedi` sind optional — ohne sie läuft der Editor weiter, nur mit eingeschränkten Komfortfunktionen (siehe [requirements.txt](requirements.txt)).
+`requirements.txt` unterscheidet zwischen Kern-Abhängigkeit (`PyQt6`) und
+optionalen Paketen, die nur für einzelne Werkzeuge gebraucht werden
+(`qtawesome`, `jedi`, `pyflakes`, `jsonschema`, `PyYAML`, `yara-python`,
+`PyMySQL`).
 
-## 🚀 Nutzung
+## Start
 
 ```bash
 python3 pandora_script_editor.py
+```
+
+Beim ersten Aufruf eines externen Werkzeugs (Menü **Werkzeuge**) fragt der
+Editor einmalig nach dem Pfad zum jeweiligen Einstiegs-Skript (z.B.
+`tools/pandora_crypto_tool/pandora_crypto_tool.py`) und merkt sich diesen
+in `~/.pandora_script_editor.json`.
+
+Jedes Tool lässt sich auch direkt und unabhängig vom Haupteditor starten,
+z.B.:
+
+```bash
+python3 tools/pandora_crypto_tool/pandora_crypto_tool.py
+```
+
+## Projektstruktur
+
+```
+.
+├── pandora_script_editor.py
+├── requirements.txt
+├── LICENSE
+└── tools/
+    ├── pandora_json_yaml_yara_editor/
+    ├── pandora_snippet_vault/
+    ├── pandora_sql_config_editor/
+    │   ├── core/
+    │   └── ui/
+    ├── pandora_web_editor/
+    ├── pandora_crypto_tool/
+    │   ├── core/
+    │   └── ui/
+    ├── pandora_ui_asset_color_studio/
+    │   ├── core/
+    │   └── ui/
+    └── pandora_env_dependency_manager/
+        ├── core/
+        └── ui/
 ```
 
 ### Wichtige Tastenkürzel
