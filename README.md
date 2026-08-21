@@ -29,9 +29,8 @@ Dieses Repository enthält den **Pandora® Script Editor** sowie den kompletten 
 
 Ein schlanker, benutzerfreundlicher Python-Script-Editor auf Basis von **PyQt6** – mit Login-Bildschirm und einer Sammlung begleitender Pandora-Tools.
 
-```markdown
+
 ![Screenshot](screenshot.png)
-```
 
 ## Funktionen
 
