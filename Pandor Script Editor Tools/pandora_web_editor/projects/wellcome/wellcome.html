@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<style>
+body {
+    background: #0a0e14;
+    color: #c9f2ef;
+    font-family: sans-serif;
+    padding: 24px;
+}
+
+h1 {
+    color: #ff2fd0;
+}
+
+button_1 {
+    background: #00e5ff;
+    border: none;
+    color: black;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button_2 {
+    background: #ff0000;
+    border: none;
+    color: black;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button_3 {
+    background: green;
+    border: none;
+    color: black;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-weight: bold;
+    cursor: pointer;
+}
+</style>
+</head>
+<body>
+<h1>Willkommen im Pandora Web Editor</h1>
+<p>Schreib oben dein HTML, CSS und JavaScript Code - die Vorschau unten
+aktualisiert sich in Echtzeit.</p>
+<p><button_1 id="demoBtn_1">Klick mich</button_1></p>
+<p><button_2 id="demoBtn_2">Klick mich</button_2></p>
+<p><button_3 id="demoBtn_3">Klick mich</button_3></p>
+
+<script>
+document.getElementById('demoBtn_1').addEventListener('click', () => {
+    alert('Live-Vorschau funktioniert!');
+});
+document.getElementById('demoBtn_2').addEventListener('click', () => {
+    alert('Live-Vorschau funktioniert hier auch!');
+});
+document.getElementById('demoBtn_3').addEventListener('click', () => {
+    alert('Und hier auch!');
+});
+</script>
+</body>
+</html>

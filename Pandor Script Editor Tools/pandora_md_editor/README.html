@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    body {
+        background-color: #0d0505;
+        color: #f2e4e4;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        font-size: 15px;
+        line-height: 1.6;
+        padding: 24px 32px;
+        margin: 0;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #e8574f;
+        border-bottom: 1px solid #4d1414;
+        padding-bottom: 6px;
+        font-weight: 600;
+    }
+    h1 { font-size: 26px; }
+    h2 { font-size: 21px; }
+    h3 { font-size: 18px; }
+    a {
+        color: #ff8b7a;
+        text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+    code {
+        background-color: #240d0d;
+        color: #ff9d8a;
+        border: 1px solid #4d1414;
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-family: "Consolas", "Cascadia Code", monospace;
+    }
+    pre {
+        background-color: #1a0a0a;
+        border: 1px solid #4d1414;
+        border-radius: 6px;
+        padding: 14px;
+        overflow-x: auto;
+    }
+    pre code {
+        background: none;
+        border: none;
+        padding: 0;
+    }
+    blockquote {
+        border-left: 4px solid #7a1c1c;
+        margin: 8px 0;
+        padding: 4px 16px;
+        color: #d8b0b0;
+        background-color: #1a0a0a;
+    }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 12px 0;
+    }
+    th, td {
+        border: 1px solid #4d1414;
+        padding: 8px 12px;
+        text-align: left;
+    }
+    th {
+        background-color: #240d0d;
+        color: #e8574f;
+    }
+    tr:nth-child(even) {
+        background-color: #150808;
+    }
+    hr {
+        border: none;
+        border-top: 1px solid #4d1414;
+        margin: 20px 0;
+    }
+    img {
+        max-width: 100%;
+        border-radius: 4px;
+        border: 1px solid #4d1414;
+    }
+    ul, ol {
+        padding-left: 24px;
+    }
+    /* Pygments codehilite Klassen - dezente Darkred-Anpassung */
+    .codehilite {
+        background-color: #1a0a0a;
+        border: 1px solid #4d1414;
+        border-radius: 6px;
+        padding: 10px;
+    }
+    .codehilite .k { color: #ff8b7a; font-weight: bold; }
+    .codehilite .s, .codehilite .s1, .codehilite .s2 { color: #d99a6c; }
+    .codehilite .c1, .codehilite .c { color: #7a5c5c; font-style: italic; }
+    .codehilite .n { color: #f2e4e4; }
+    .codehilite .nf { color: #ffb199; }
+    .codehilite .mi, .codehilite .mf { color: #e8a87c; }
+</style>
+</head>
+<body>
+<h1 id="pandora-md-editor">Pandora® md Editor</h1>
+<p>Ein schlanker Split-Screen-Markdown-Editor im <strong>Darkred</strong>-Design – geschrieben mit<br />
+Python 3 und PyQt6. Links Eingabe (mit Syntax-Highlighting), rechts Live-Vorschau<br />
+als gerendertes HTML, inklusive PDF-Export.</p>
+<p>by <strong>AKI_SystemDown®</strong> — Teil der Pandora-Projektreihe</p>
+<h2 id="features">Features</h2>
+<ul>
+<li>Zwei-Fenster-Ansicht (Splitter): <code>QTextEdit</code>-Editor links, <code>QWebEngineView</code>-Vorschau rechts</li>
+<li>Live-Rendering während des Tippens (entprellt, 150 ms)</li>
+<li>Markdown-Syntax-Highlighting im Editor (Überschriften, Fett/Kursiv, Code, Links, Listen, Zitate, <code>---</code>)</li>
+<li>Menüleiste &amp; Toolbar: Neu, Öffnen, Speichern, Speichern unter, PDF-Export, HTML-Export, Beenden</li>
+<li>Markdown-Parsing über die <code>markdown</code>-Bibliothek (Extras: Tabellen, Fenced Code Blocks, <code>codehilite</code> für Code-Syntax-Highlighting im HTML, TOC, sane_lists, nl2br)</li>
+<li>PDF-Export direkt aus der gerenderten Vorschau (<code>QWebEnginePage.printToPdf</code>, A4)</li>
+<li>Zusätzlicher HTML-Export der gerenderten Ansicht</li>
+<li>Modernes Darkred-QSS-Theme, Logo im Fenster-Icon &amp; Kopfzeile</li>
+</ul>
+<h2 id="projektstruktur">Projektstruktur</h2>
+<div class="codehilite"><pre><span></span><code>pandora_md_editor/
+├── main.py            # Einstiegspunkt
+├── editor.py           # Hauptfenster (Split-Screen, Datei-/PDF-Logik)
+├── highlighter.py       # QSyntaxHighlighter für Markdown im Editor
+├── theme.py             # Darkred-QSS + HTML/CSS-Vorlage für die Vorschau
+├── requirements.txt
+└── assets/
+    ├── logo.png          # Fenster-Icon / Kopfzeilen-Logo
+    └── aki_logo.gif       # Original-Logo-Datei
+</code></pre></div>
+
+<h2 id="installation">Installation</h2>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+</code></pre></div>
+
+<p>oder einzeln:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>PyQt6<span class="w"> </span>PyQt6-WebEngine<span class="w"> </span>markdown<span class="w"> </span>Pygments
+</code></pre></div>
+
+<blockquote>
+<p><strong>Hinweis (Linux/Raspberry Pi):</strong> <code>PyQt6-WebEngine</code> benötigt ggf. zusätzliche<br />
+Systembibliotheken (Qt WebEngine/Chromium-Abhängigkeiten). Falls der Import<br />
+fehlschlägt: <code>sudo apt install libnss3 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxkbcommon0</code></p>
+</blockquote>
+<h2 id="ausfuhren">Ausführen</h2>
+<div class="codehilite"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>pandora_md_editor
+python<span class="w"> </span>main.py
+</code></pre></div>
+
+<h2 id="bedienung">Bedienung</h2>
+<table>
+<thead>
+<tr>
+<th>Aktion</th>
+<th>Shortcut</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Neu</td>
+<td>Strg+N</td>
+</tr>
+<tr>
+<td>Öffnen</td>
+<td>Strg+O</td>
+</tr>
+<tr>
+<td>Speichern</td>
+<td>Strg+S</td>
+</tr>
+<tr>
+<td>Speichern unter</td>
+<td>Strg+Umschalt+S</td>
+</tr>
+<tr>
+<td>Als PDF exportieren</td>
+<td>Strg+P</td>
+</tr>
+</tbody>
+</table>
+<p>Die Vorschau rendert automatisch, sobald der Text im linken Editor geändert wird<br />
+(mit kurzer Verzögerung von 150 ms, um bei langen Dokumenten flüssig zu bleiben).</p>
+</body>
+</html>

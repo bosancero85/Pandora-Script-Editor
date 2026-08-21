@@ -1,0 +1,31 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "static_ip": "0.0.0.0",
+    "port": 8443,
+    "use_ssl": true,
+    "log_level": "connection_info",
+    "max_connections": 100
+  },
+  "database": {
+    "engine": "mariadb",
+    "path": "/var/lib/app/data.db",
+    "login": "",
+    "password": "",
+    "database": "",
+    "timeout_seconds": -5.0
+  },
+  "features": {
+    "dark_mode": true,
+    "forec_connection_active": true,
+    "updates": true,
+    "mod_tools": true,
+    "admin_tools": true,
+    "user_tools": true
+  },
+  "allowed_ips": [
+    "127.0.0.1",
+    "192.168.1.10",
+    "10.0.0.5"
+  ]
+}
