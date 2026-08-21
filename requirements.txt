@@ -1,20 +1,93 @@
-# Pandora Script Editor - Abhängigkeiten
+# Pandora Script Editor – Gesammelte requirements.txt Dateien
+# Zusammengeführt aus dem Haupt-Editor und allen Werkzeug-Unterprojekten
+# des Archivs Pandora_Script_Editor.zip
 #
-# Kern (zwingend erforderlich):
+# =================================================================
+# Konsolidierte, deduplizierte Liste (für: pip install -r requirements.txt)
+# =================================================================
+jsonschema>=4.20
+markdown>=3.5.2
+matplotlib>=3.7
+Pygments>=2.17.2
+pymysql>=1.1
+PyQt6>=6.6.0
+PyQt6-WebEngine>=6.6.0
+PyYAML>=6.0
+
+# Optionale Pakete (nur für bestimmte Werkzeuge/Features benötigt,
+# siehe jeweilige Quell-requirements.txt weiter unten):
+#   jedi, pyflakes, qtawesome          -> Pandora Script Editor (Haupt-Editor)
+#   yara-python                         -> json yaml editor (YARA-Compiler-Validierung)
+
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/json yaml editor/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+PyYAML>=6.0
+jsonschema>=4.20
+
+# Optional, für echte YARA-Compiler-Validierung im YARA-Regel-Editor:
+# yara-python>=4.5
+
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_crypto_tool/requirements.txt
+# ---------------------------------------------------------------
 PyQt6>=6.6
 
-# Optional, aber empfohlen (Icon-Theme; ohne dies greift ein Emoji-Fallback):
-qtawesome>=1.3
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_env_dependency_manager/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
 
-# Optional, je nach genutztem Werkzeug:
-jedi>=0.19          # Code-Vervollständigung im Haupteditor
-pyflakes>=3.2        # Linting im Haupteditor
-jsonschema>=4.21     # JSON/YAML/YARA-Editor (Schema-Validierung)
-PyYAML>=6.0          # JSON/YAML/YARA-Editor
-yara-python>=4.5     # JSON/YAML/YARA-Editor (YARA-Regelprüfung)
-PyMySQL>=1.1         # SQL Config Editor & Validator (MySQL-Backend)
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_md_editor/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6.0
+PyQt6-WebEngine>=6.6.0
+markdown>=3.5.2
+Pygments>=2.17.2
 
-# Das neue Pandora Crypto & Encoding Utility (tools/pandora_crypto_tool)
-# benötigt bewusst KEINE zusätzlichen Pakete außer PyQt6 - Base64/Hex/URL/
-# HTML-Encoding, Hashing/HMAC, JWT-Parsing und RegEx laufen komplett über
-# die Python-Standardbibliothek.
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_pcb_editor/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+matplotlib>=3.7
+
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_snippet_vault/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_sql_config_editor/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+pymysql>=1.1
+
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_ui_asset_color_studio/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_ui_forge/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+
+# ---------------------------------------------------------------
+# Quelle: Pandor Script Editor Tools/pandora_web_editor/requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+PyQt6-WebEngine>=6.6
+
+# ---------------------------------------------------------------
+# Quelle: requirements.txt
+# ---------------------------------------------------------------
+PyQt6>=6.6
+
+# Optional, für kontextbezogene Autovervollständigung via Jedi:
+# jedi>=0.19
+# Optional, für erweiterte Lint-Warnungen (sonst nur Syntaxprüfung via ast):
+# pyflakes>=3.2
+# Optional, für FontAwesome-Icon-Theme (sonst Emoji-Fallback):
+# qtawesome>=1.3

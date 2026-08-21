@@ -112,6 +112,8 @@ from PyQt6.QtWidgets import (
     QTextBrowser,
     QListWidget,
     QListWidgetItem,
+    QFormLayout,
+    QDialogButtonBox,
 )
 
 try:
@@ -151,7 +153,24 @@ CFG_KEY_WEB_EDITOR = "web_editor_path"
 CFG_KEY_SNIPPET_VAULT = "snippet_vault_path"
 CFG_KEY_CRYPTO_TOOL = "crypto_tool_path"
 CFG_KEY_UI_ASSET_COLOR_STUDIO = "ui_asset_color_studio_path"
+CFG_KEY_UI_FORGE = "ui_forge_path"
 CFG_KEY_ENV_DEPENDENCY_MANAGER = "env_dependency_manager_path"
+CFG_KEY_PCB_EDITOR = "pcb_editor_path"
+CFG_KEY_MD_EDITOR = "md_editor_path"
+CFG_KEY_STRUCTURE_CREATOR = "structure_creator_path"
+
+# Datei-Filter für die Tool-Auswahldialoge der eigenständig (als Subprozess)
+# gestarteten Tools: akzeptiert sowohl Python-Quellskripte (*.py) als auch
+# fertige Programm-Builds (*.exe unter Windows, z.B. das Ergebnis eines
+# PyInstaller-`--onedir`-Builds - dort liegt die relevante Datei im jeweiligen
+# dist\<Toolname>\<Toolname>.exe). Unter Linux/macOS erzeugt PyInstaller eine
+# ausführbare Datei ohne Endung; diese lässt sich über "Alle Dateien" auswählen.
+TOOL_ENTRYPOINT_FILTER = (
+    "Pandora-Tool (*.py *.exe);;"
+    "Python-Datei (*.py);;"
+    "Programm (*.exe);;"
+    "Alle Dateien (*)"
+)
 
 
 # ----------------------------------------------------------------------
@@ -2929,6 +2948,14 @@ class MainWindow(QMainWindow):
             ic, tx, self, triggered=lambda: self.git_panel._run("pull", ["pull"])
         )
 
+        ic, tx = themed("fa5s.key", "Zugangsdaten ändern…", "🔑")
+        self.act_change_credentials = QAction(
+            ic, tx, self, triggered=self.change_login_credentials
+        )
+        self.act_change_credentials.setToolTip(
+            "Benutzername/Passwort für den Login-Bildschirm ändern"
+        )
+
         ic, tx = themed("fa5s.info-circle", "Über " + APP_NAME)
         self.act_about = QAction(ic, tx, self, triggered=self.show_about)
 
@@ -3012,6 +3039,58 @@ class MainWindow(QMainWindow):
             triggered=lambda: self.launch_ui_asset_color_studio(force_repath=True),
         )
 
+        ic, tx = themed("fa5s.drafting-compass", "UI Forge", "🎛️")
+        self.act_tool_ui_forge = QAction(
+            ic, tx, self, triggered=self.launch_ui_forge
+        )
+        self.act_tool_ui_forge.setToolTip(
+            "Pandora UI Forge öffnen (visueller PyQt6 Design-Editor: Canvas "
+            "mit Drag & Drop, synchroner Code-Editor, AST-Import bestehender "
+            ".py-Dateien, Live-Vorschau)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (UI Forge)…")
+        self.act_tool_ui_forge_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_ui_forge(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.file-alt", "MD Editor", "📝")
+        self.act_tool_md_editor = QAction(
+            ic, tx, self, triggered=self.launch_md_editor
+        )
+        self.act_tool_md_editor.setToolTip(
+            "Pandora MD Editor öffnen (Split-Screen Markdown-Editor mit "
+            "Live-Vorschau, Syntax-Highlighting und PDF-Export)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (MD Editor)…")
+        self.act_tool_md_editor_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_md_editor(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.sitemap", "Structure Creator", "🗂️")
+        self.act_tool_structure_creator = QAction(
+            ic, tx, self, triggered=self.launch_structure_creator
+        )
+        self.act_tool_structure_creator.setToolTip(
+            "Pandora Structure Creator öffnen (Ordner-/Dateistrukturen aus "
+            "einer Baum-Textvorlage an frei wählbarem Zielort erzeugen)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (Structure Creator)…")
+        self.act_tool_structure_creator_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_structure_creator(force_repath=True),
+        )
+
         ic, tx = themed("fa5s.cubes", "Environment & Dependency Manager", "📦")
         self.act_tool_env_dependency_manager = QAction(
             ic, tx, self, triggered=self.launch_env_dependency_manager
@@ -3027,6 +3106,23 @@ class MainWindow(QMainWindow):
             tx,
             self,
             triggered=lambda: self.launch_env_dependency_manager(force_repath=True),
+        )
+
+        ic, tx = themed("fa5s.microchip", "PCB Editor", "🖧")
+        self.act_tool_pcb_editor = QAction(
+            ic, tx, self, triggered=self.launch_pcb_editor
+        )
+        self.act_tool_pcb_editor.setToolTip(
+            "Pandora PCB Editor öffnen (Leiterplatten-Layout, Gerber-/Excellon-"
+            "Export, 3D-Vorschau)"
+        )
+
+        ic, tx = themed("fa5s.edit", "Pfad ändern (PCB Editor)…")
+        self.act_tool_pcb_editor_repath = QAction(
+            ic,
+            tx,
+            self,
+            triggered=lambda: self.launch_pcb_editor(force_repath=True),
         )
 
         # -- Code Snippet Vault: läuft NICHT als externer Prozess, sondern
@@ -3187,21 +3283,33 @@ class MainWindow(QMainWindow):
         m_tools.addAction(self.act_tool_web_editor)
         m_tools.addAction(self.act_tool_crypto)
         m_tools.addAction(self.act_tool_ui_asset_color_studio)
+        m_tools.addAction(self.act_tool_ui_forge)
+        m_tools.addAction(self.act_tool_md_editor)
+        m_tools.addAction(self.act_tool_structure_creator)
         m_tools.addAction(self.act_tool_env_dependency_manager)
+        m_tools.addAction(self.act_tool_pcb_editor)
         m_tools.addSeparator()
         m_tools.addAction(self.act_tool_snippet_vault)
         m_tools.addAction(self.act_tool_snippet_quick_insert)
-        m_tools.addSeparator()
-        m_tools.addAction(self.act_tool_json_yaml_repath)
-        m_tools.addAction(self.act_tool_sql_config_repath)
-        m_tools.addAction(self.act_tool_web_editor_repath)
-        m_tools.addAction(self.act_tool_crypto_repath)
-        m_tools.addAction(self.act_tool_ui_asset_color_studio_repath)
-        m_tools.addAction(self.act_tool_env_dependency_manager_repath)
-        m_tools.addAction(self.act_tool_snippet_vault_repath)
+
+        m_settings = menu.addMenu("&Einstellungen")
+        m_settings.addAction(self.act_change_credentials)
 
         m_help = menu.addMenu("&Hilfe")
         m_help.addAction(self.act_about)
+        m_help.addSeparator()
+        m_tool_paths = m_help.addMenu("Werkzeug-Pfade ändern")
+        m_tool_paths.addAction(self.act_tool_json_yaml_repath)
+        m_tool_paths.addAction(self.act_tool_sql_config_repath)
+        m_tool_paths.addAction(self.act_tool_web_editor_repath)
+        m_tool_paths.addAction(self.act_tool_crypto_repath)
+        m_tool_paths.addAction(self.act_tool_ui_asset_color_studio_repath)
+        m_tool_paths.addAction(self.act_tool_ui_forge_repath)
+        m_tool_paths.addAction(self.act_tool_md_editor_repath)
+        m_tool_paths.addAction(self.act_tool_structure_creator_repath)
+        m_tool_paths.addAction(self.act_tool_env_dependency_manager_repath)
+        m_tool_paths.addAction(self.act_tool_pcb_editor_repath)
+        m_tool_paths.addAction(self.act_tool_snippet_vault_repath)
 
     def _create_toolbar(self):
         tb = QToolBar("Werkzeugleiste")
@@ -3236,6 +3344,7 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_tool_crypto)
         tb.addAction(self.act_tool_ui_asset_color_studio)
         tb.addAction(self.act_tool_env_dependency_manager)
+        tb.addAction(self.act_tool_pcb_editor)
         tb.addSeparator()
         tb.addAction(self.act_tool_snippet_vault)
         tb.addAction(self.act_tool_snippet_quick_insert)
@@ -3308,9 +3417,31 @@ class MainWindow(QMainWindow):
         """Startet ein externes Pandora-Tool als eigenständigen Prozess (eigene
         QApplication), damit es unabhängig vom Script Editor läuft und es
         keine Namenskonflikte mit dessen Klassen gibt (z.B. eigene
-        'MainWindow'-Klassen)."""
+        'MainWindow'-Klassen).
+
+        Unterstützt zwei Arten von Einstiegspunkten:
+        - Python-Quellskript (*.py)   -> wird mit demselben Interpreter
+          gestartet, der auch den Script Editor ausführt (sys.executable).
+        - Eigenständiges Programm/Build (*.exe unter Windows, oder eine
+          ausführbare Datei ohne Endung unter Linux/macOS, z.B. das
+          Ergebnis eines PyInstaller-`--onedir`-Builds) -> wird direkt
+          ausgeführt, ohne Python-Interpreter davor."""
+        is_python_script = script_path.lower().endswith(".py")
         try:
-            args = [sys.executable, script_path] + list(extra_args or [])
+            if is_python_script:
+                args = [sys.executable, script_path] + list(extra_args or [])
+            else:
+                if os.name != "nt" and not os.access(script_path, os.X_OK):
+                    QMessageBox.critical(
+                        self,
+                        f"{friendly_name} konnte nicht gestartet werden",
+                        f"Die Datei ist nicht ausführbar:\n{script_path}\n\n"
+                        f"Unter Linux/macOS ggf. per\n"
+                        f"    chmod +x \"{script_path}\"\n"
+                        f"ausführbar machen.",
+                    )
+                    return
+                args = [script_path] + list(extra_args or [])
             subprocess.Popen(args, cwd=os.path.dirname(script_path) or None)
             self.statusBar().showMessage(f"{friendly_name} gestartet…", 3000)
         except Exception as e:
@@ -3326,7 +3457,7 @@ class MainWindow(QMainWindow):
         path = self._resolve_tool_path(
             CFG_KEY_JSON_YAML_EDITOR,
             "Pandora JSON/YAML Editor auswählen (pandora_config_editor.py)",
-            "Python-Datei (*.py)",
+            TOOL_ENTRYPOINT_FILTER,
             force_repath=force_repath,
         )
         if not path:
@@ -3347,7 +3478,7 @@ class MainWindow(QMainWindow):
         path = self._resolve_tool_path(
             CFG_KEY_SQL_CONFIG_EDITOR,
             "main.py des Pandora SQL Config Editors auswählen",
-            "Python-Datei (*.py)",
+            TOOL_ENTRYPOINT_FILTER,
             force_repath=force_repath,
         )
         if not path:
@@ -3361,7 +3492,7 @@ class MainWindow(QMainWindow):
         path = self._resolve_tool_path(
             CFG_KEY_WEB_EDITOR,
             "Pandora Web Editor auswählen (pandora_web_editor.py)",
-            "Python-Datei (*.py)",
+            TOOL_ENTRYPOINT_FILTER,
             force_repath=force_repath,
         )
         if not path:
@@ -3385,7 +3516,7 @@ class MainWindow(QMainWindow):
         path = self._resolve_tool_path(
             CFG_KEY_CRYPTO_TOOL,
             "pandora_crypto_tool.py auswählen (Pandora Crypto & Encoding Utility)",
-            "Python-Datei (*.py)",
+            TOOL_ENTRYPOINT_FILTER,
             force_repath=force_repath,
         )
         if not path:
@@ -3400,12 +3531,80 @@ class MainWindow(QMainWindow):
         path = self._resolve_tool_path(
             CFG_KEY_UI_ASSET_COLOR_STUDIO,
             "pandora_ui_asset_color_studio.py auswählen (Pandora UI Asset & Color Studio)",
-            "Python-Datei (*.py)",
+            TOOL_ENTRYPOINT_FILTER,
             force_repath=force_repath,
         )
         if not path:
             return
         self._launch_external_tool(path, friendly_name="Pandora UI Asset & Color Studio")
+
+    def launch_ui_forge(self, force_repath=False):
+        """Öffnet die Pandora UI Forge (visueller PyQt6 Design-Editor mit
+        Drag&Drop-Canvas, Live-Code-Generator und AST-Import bestehender
+        .py-Dateien). Läuft wie die anderen Werkzeuge als eigenständiger
+        Prozess, da es sich um eine vollständig eigenständige PyQt6-
+        Anwendung (eigene MainWindow-Klasse) handelt. Ist gerade eine
+        .py-Datei im Editor aktiv, wird sie direkt mitgegeben und in
+        UI Forge automatisch geöffnet/analysiert."""
+        path = self._resolve_tool_path(
+            CFG_KEY_UI_FORGE,
+            "pandora_ui_forge.py auswählen (Pandora UI Forge)",
+            TOOL_ENTRYPOINT_FILTER,
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+
+        extra_args = []
+        editor = self.current_editor()
+        if editor is not None and getattr(editor, "_file_path", None):
+            file_path = editor._file_path
+            if os.path.splitext(file_path)[1].lower() == ".py":
+                extra_args.append(file_path)
+
+        self._launch_external_tool(path, extra_args, "Pandora UI Forge")
+
+    def launch_md_editor(self, force_repath=False):
+        """Öffnet den Pandora MD Editor (Split-Screen Markdown-Editor mit
+        Live-Vorschau, Syntax-Highlighting und PDF-Export). Ist gerade eine
+        .md/.markdown-Datei im Editor aktiv, wird sie direkt mitgegeben.
+        Läuft wie die anderen Werkzeuge als eigenständiger Prozess, da es
+        sich um eine vollständig eigenständige PyQt6-Anwendung (eigene
+        MainWindow-Klasse) handelt."""
+        path = self._resolve_tool_path(
+            CFG_KEY_MD_EDITOR,
+            "main.py des Pandora MD Editors auswählen (pandora_md_editor)",
+            TOOL_ENTRYPOINT_FILTER,
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+
+        extra_args = []
+        editor = self.current_editor()
+        if editor is not None and getattr(editor, "_file_path", None):
+            file_path = editor._file_path
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in (".md", ".markdown"):
+                extra_args.append(file_path)
+
+        self._launch_external_tool(path, extra_args, "Pandora MD Editor")
+
+    def launch_structure_creator(self, force_repath=False):
+        """Öffnet den Pandora Structure Creator (erzeugt Ordner-/Datei-
+        strukturen aus einer Baum-Textvorlage an frei wählbarem Zielort).
+        Läuft wie die anderen Werkzeuge als eigenständiger Prozess, da es
+        sich um eine vollständig eigenständige PyQt6-Anwendung (eigene
+        MainWindow-Klasse) handelt."""
+        path = self._resolve_tool_path(
+            CFG_KEY_STRUCTURE_CREATOR,
+            "main.py des Pandora Structure Creators auswählen (PandoraStructureCreator)",
+            TOOL_ENTRYPOINT_FILTER,
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+        self._launch_external_tool(path, friendly_name="Pandora Structure Creator")
 
     def launch_env_dependency_manager(self, force_repath=False):
         """Öffnet den Pandora Environment & Dependency Manager (Virtualenv
@@ -3415,12 +3614,28 @@ class MainWindow(QMainWindow):
         path = self._resolve_tool_path(
             CFG_KEY_ENV_DEPENDENCY_MANAGER,
             "pandora_env_dependency_manager.py auswählen (Pandora Environment & Dependency Manager)",
-            "Python-Datei (*.py)",
+            TOOL_ENTRYPOINT_FILTER,
             force_repath=force_repath,
         )
         if not path:
             return
         self._launch_external_tool(path, friendly_name="Pandora Environment & Dependency Manager")
+
+    def launch_pcb_editor(self, force_repath=False):
+        """Öffnet den Pandora PCB Editor (Leiterplatten-Layout mit Ratsnest,
+        DRC, Autorouter, Gerber-X2-/Excellon-Export und 3D-Vorschau). Läuft
+        wie der SQL Config Editor als eigenständiger Prozess, da es sich um
+        eine vollständig eigenständige PyQt6-Anwendung (eigene MainWindow-
+        Klasse) handelt."""
+        path = self._resolve_tool_path(
+            CFG_KEY_PCB_EDITOR,
+            "pandora_pcb_editor.py auswählen (Pandora PCB Editor)",
+            TOOL_ENTRYPOINT_FILTER,
+            force_repath=force_repath,
+        )
+        if not path:
+            return
+        self._launch_external_tool(path, friendly_name="Pandora PCB Editor")
 
     # ---------------- Code Snippet Vault (In-Prozess-Integration) ----------------
     def _get_snippet_vault_module(self, force_repath=False):
@@ -3432,6 +3647,10 @@ class MainWindow(QMainWindow):
         path = self._resolve_tool_path(
             CFG_KEY_SNIPPET_VAULT,
             "Pandora Code Snippet Vault auswählen (pandora_snippet_vault.py)",
+            # Bewusst nur *.py: wird per importlib als Modul in diesen Prozess
+            # geladen (kein subprocess) - ein .exe-Build kann hier nicht
+            # eingebunden werden. Für einen --onedir-Build müsste stattdessen
+            # weiterhin die .py-Quelldatei des Snippet Vault ausgewählt werden.
             "Python-Datei (*.py)",
             force_repath=force_repath,
         )
@@ -3525,6 +3744,90 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         popup.exec()
+
+    def change_login_credentials(self):
+        """Öffnet einen Dialog, über den Benutzername/Passwort für den
+        Login-Bildschirm (login_ui.py) geändert werden können. Aus
+        Sicherheitsgründen muss dafür das aktuell gültige Passwort
+        bestätigt werden. Die neuen Daten werden in login_config.json
+        gespeichert (Passwort nur als SHA-256-Hash)."""
+        try:
+            from login_ui import load_credentials, save_credentials, _hash_password
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Nicht verfügbar",
+                "login_ui.py wurde nicht gefunden - Zugangsdaten können "
+                "nicht geändert werden.",
+            )
+            return
+
+        current_username, current_password_hash = load_credentials()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Zugangsdaten ändern")
+        dialog.setMinimumWidth(340)
+
+        form = QFormLayout(dialog)
+
+        edit_current_password = QLineEdit(dialog)
+        edit_current_password.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Aktuelles Passwort:", edit_current_password)
+
+        edit_new_username = QLineEdit(dialog)
+        edit_new_username.setText(current_username)
+        form.addRow("Neuer Benutzername:", edit_new_username)
+
+        edit_new_password = QLineEdit(dialog)
+        edit_new_password.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Neues Passwort:", edit_new_password)
+
+        edit_new_password_repeat = QLineEdit(dialog)
+        edit_new_password_repeat.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Neues Passwort (wiederholen):", edit_new_password_repeat)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=dialog,
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # Aktuelles Passwort bestätigen
+        if _hash_password(edit_current_password.text()) != current_password_hash:
+            QMessageBox.critical(
+                self, "Login fehlgeschlagen", "Aktuelles Passwort ist falsch."
+            )
+            return
+
+        new_username = edit_new_username.text().strip()
+        new_password = edit_new_password.text()
+        new_password_repeat = edit_new_password_repeat.text()
+
+        if not new_username:
+            QMessageBox.warning(self, "Ungültige Eingabe", "Benutzername darf nicht leer sein.")
+            return
+        if not new_password:
+            QMessageBox.warning(self, "Ungültige Eingabe", "Neues Passwort darf nicht leer sein.")
+            return
+        if new_password != new_password_repeat:
+            QMessageBox.warning(
+                self, "Ungültige Eingabe", "Die beiden Passwort-Eingaben stimmen nicht überein."
+            )
+            return
+
+        save_credentials(new_username, new_password)
+        QMessageBox.information(
+            self,
+            "Gespeichert",
+            "Zugangsdaten wurden aktualisiert.\n\n"
+            f"Neuer Benutzername: {new_username}\n"
+            "Das neue Passwort gilt ab dem nächsten Login.",
+        )
 
     def show_about(self):
         jedi_status = (
@@ -3732,8 +4035,26 @@ def main():
     _install_excepthook()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    window = MainWindow()
-    window.show()
+
+    # Login-Fenster von login_ui.py vorschalten. Der eigentliche Editor
+    # (MainWindow) wird erst nach erfolgreichem Login geoeffnet.
+    from login_ui import GeneratedWindow as LoginWindow
+
+    login_window = LoginWindow()
+
+    def _open_editor():
+        # Referenz auf app haengen, damit das MainWindow-Objekt nicht
+        # vom Garbage Collector eingesammelt wird, sobald _open_editor
+        # zu Ende ist.
+        app.main_window = MainWindow()
+        app.main_window.show()
+
+    login_window.login_success.connect(_open_editor)
+    login_window.show()
+
+    # Schliesst der Nutzer das Login-Fenster ohne erfolgreichen Login
+    # (Cancel/X), beendet Qt die Anwendung automatisch, da dann kein
+    # weiteres Fenster offen ist (quitOnLastWindowClosed, Standard: True).
     sys.exit(app.exec())
 
 
