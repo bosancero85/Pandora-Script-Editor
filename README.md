@@ -1,4 +1,4 @@
-# Pandora® Script Editor — Gesamtprojekt
+# Pandora® Script Editor
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-c8102e) ![PyQt6](https://img.shields.io/badge/GUI-PyQt6-c8102e) ![Platform](https://img.shields.io/badge/Platform-Kali%20Linux%20%7C%20Raspberry%20Pi%204B-141014) ![License](https://img.shields.io/badge/License-siehe%20LICENSE-8a7a7e)
 
