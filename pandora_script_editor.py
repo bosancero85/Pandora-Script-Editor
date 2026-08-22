@@ -41,6 +41,8 @@ Optional: qtawesome  (pip install qtawesome)  -> FontAwesome-Icon-Theme
 Optional: git-CLI im PATH                      -> für die Git-Integration
 """
 
+import uuid
+import argparse
 import os
 import shutil
 import sys
